@@ -1,4 +1,3 @@
-import Ping from './pages/Ping.jsx'<Route path="/ping" element={<Ping />} />
 import { Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar.jsx'
 import Home from './pages/Home.jsx'
@@ -14,6 +13,7 @@ import StandardsImport from './pages/StandardsImport.jsx'
 import TierCheckoff from './pages/TierCheckoff.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import MentorRoute from './components/MentorRoute.jsx'
+import Ping from './pages/Ping.jsx'   // optional test page
 
 export default function App() {
   return (
@@ -32,6 +32,7 @@ export default function App() {
           <Route path="/mentor-standards" element={<ProtectedRoute><MentorRoute><MentorStandards /></MentorRoute></ProtectedRoute>} />
           <Route path="/standards-import" element={<ProtectedRoute><MentorRoute><StandardsImport /></MentorRoute></ProtectedRoute>} />
           <Route path="/tier-checkoff" element={<ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>} />
+          <Route path="/ping" element={<Ping />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -39,4 +40,3 @@ export default function App() {
     </div>
   )
 }
-
