@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/firebase'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import {
+  collection, collectionGroup, getDocs, query, where
+} from 'firebase/firestore'
 
-// Week start (Sun 00:00) – change to Mon if you prefer
 function weekStart(d = new Date()){
   const x = new Date(d)
   const day = x.getDay() // 0=Sun
@@ -14,52 +15,61 @@ function weekStart(d = new Date()){
 export default function Leaderboard(){
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([]) // {uid, name, shift, total}
+  const [error, setError] = useState('')
   const ws = useMemo(()=>weekStart(), [])
 
   useEffect(() => {
     (async () => {
-      setLoading(true)
+      setLoading(true); setError('')
 
-      // 1) Load profiles to know names + shifts
-      const profSnap = await getDocs(collection(db, 'profiles'))
-      const profiles = {}
-      const members = []
-      for (const d of profSnap.docs) {
-        const p = { id: d.id, ...d.data() }
-        profiles[p.id] = p
-        members.push(p.id)
-      }
+      try {
+        // 1) Load profiles first (names + shifts)
+        const profSnap = await getDocs(collection(db, 'profiles'))
+        const profiles = {}
+        profSnap.forEach(d => { profiles[d.id] = { id: d.id, ...(d.data() || {}) } })
 
-      // 2) For each member, sum weekly_logs (this week only)
-      const perUserTotals = []
-      for (const uid of members) {
-        const logsRef = collection(db, 'weekly_logs', uid)
-        // filter by ts >= weekStart on client after fetching (some older SDKs need per-user filtering)
-        // If your SDK supports it, you can do: query(logsRef, where('ts', '>=', ws))
-        // We'll do the safe route:
-        const qLogs = query(logsRef, where('ts', '>=', ws))
-        const snap = await getDocs(qLogs).catch(async () => {
-          // fallback if composite index needed or environments vary
-          const all = await getDocs(logsRef)
-          return { docs: all.docs.filter(x => (x.data().ts || 0) >= ws) }
-        })
-
-        let total = 0
-        for (const l of snap.docs) {
-          const { amount } = l.data()
-          total += Number(amount) || 0
+        // 2) Read ALL weekly entries this week via collection group (entries under any user)
+        let cgSnap
+        try {
+          const q1 = query(collectionGroup(db, 'entries'), where('ts', '>=', ws))
+          cgSnap = await getDocs(q1)
+        } catch (e) {
+          // Fallback: no index or older env — read all and filter client-side
+          const qAll = await getDocs(collectionGroup(db, 'entries'))
+          const arr = []
+          qAll.forEach(d => { const data = d.data() || {}; if ((data.ts || 0) >= ws) arr.push(d) })
+          cgSnap = { forEach: (fn) => arr.forEach(fn), docs: arr }
         }
-        const prof = profiles[uid] || {}
-        perUserTotals.push({
-          uid,
-          name: prof.displayName || 'Firefighter',
-          shift: prof.shift || 'A',
-          total
-        })
-      }
 
-      setRows(perUserTotals)
-      setLoading(false)
+        // 3) Aggregate totals per user (extract uid from the path: weekly_logs/{uid}/entries/{log})
+        const perUser = new Map()
+        cgSnap.forEach(docSnap => {
+          const data = docSnap.data() || {}
+          const amount = Number(data.amount) || 0
+          // parent chain: entries -> {uid} -> weekly_logs
+          const uid = docSnap.ref.parent.parent?.id || data.uid || 'unknown'
+          if (!uid) return
+          perUser.set(uid, (perUser.get(uid) || 0) + amount)
+        })
+
+        // 4) Build rows with names + shifts
+        const rowsArr = Array.from(perUser.entries()).map(([uid, total]) => {
+          const p = profiles[uid] || {}
+          return {
+            uid,
+            name: p.displayName || 'Firefighter',
+            shift: p.shift || 'A',
+            total
+          }
+        })
+
+        setRows(rowsArr)
+      } catch (e) {
+        console.error(e)
+        setError(e?.message || 'Failed to load leaderboard.')
+      } finally {
+        setLoading(false)
+      }
     })()
   }, [ws])
 
@@ -78,7 +88,10 @@ export default function Leaderboard(){
       <h2 className="text-2xl font-bold">Leaderboard</h2>
       <p className="text-sm text-slate-600">Totals since: {new Date(ws).toLocaleString()}</p>
 
-      {loading ? <p>Loading…</p> : (
+      {loading && <p>Loading…</p>}
+      {error && <p className="text-red-600">{error}</p>}
+
+      {!loading && !error && (
         <>
           {/* Shift totals */}
           <div className="grid md:grid-cols-3 gap-3">
