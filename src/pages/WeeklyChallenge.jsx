@@ -39,8 +39,7 @@ export default function WeeklyChallenge(){
           if (snap.exists()) {
             setMeta({ ...DEFAULT_META, ...snap.data() })
           } else {
-            // no doc yet — show default locally; mentors can create it
-            setMeta(DEFAULT_META)
+            setMeta(DEFAULT_META) // show defaults; mentors can create it
           }
         }
       } catch (err) {
@@ -87,6 +86,7 @@ export default function WeeklyChallenge(){
     if (!num || num < 0 || num > MAX_ENTRY) return
     try {
       await addDoc(collection(db, 'weekly_logs', user.uid, 'entries'), {
+        uid: user.uid,
         amount: num,
         unit: meta?.unit || 'm',
         ts: Date.now()
@@ -137,9 +137,7 @@ export default function WeeklyChallenge(){
         <div className="text-lg font-semibold">{meta?.title || DEFAULT_META.title}</div>
         <div className="text-slate-700">{meta?.details || DEFAULT_META.details}</div>
 
-        {metaError && (
-          <div className="text-sm text-red-600">Note: {metaError}</div>
-        )}
+        {metaError && <div className="text-sm text-red-600">Note: {metaError}</div>}
 
         <div className="mt-2">
           <div className="text-sm text-slate-600">
