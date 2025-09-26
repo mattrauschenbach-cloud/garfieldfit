@@ -75,13 +75,13 @@ export default function MonthlyChallenge(){
   // My current month status + lifetime count
   useEffect(()=>{(async()=>{
     if (!user) return
-    const snap = await getDoc(doc(db,'monthly_status', activeMid, user.uid))
+    const snap = await getDoc(doc(db,'monthly_status', activeMid, 'users', user.uid))
     setCompleted(snap.exists() ? !!snap.data().done : false)
     const me = await getDoc(doc(db,'profiles', user.uid))
     setCount(me.exists() ? (me.data().monthlyDoneCount || 0) : 0)
   })()},[user, activeMid])
 
-  // Mentor/member: who completed this month + shift totals
+  // Who completed this month + shift totals
   useEffect(()=>{(async()=>{
     try{
       // profiles for names/shifts
@@ -89,8 +89,8 @@ export default function MonthlyChallenge(){
       const profiles = {}
       profilesSnap.docs.forEach(d => profiles[d.id] = { id:d.id, ...d.data() })
 
-      // monthly_status/{mid} docs keyed by userId
-      const col = collection(db,'monthly_status', activeMid)
+      // monthly_status/{mid}/users docs keyed by userId
+      const col = collection(db,'monthly_status', activeMid, 'users')
       const monthSnap = await getDocs(col)
 
       const arr = []
@@ -118,7 +118,7 @@ export default function MonthlyChallenge(){
     let s = 0
     for (let i=0;i<6;i++){
       const mid = monthId(addMonths(new Date(), -i))
-      const snap = await getDoc(doc(db,'monthly_status', mid, user.uid))
+      const snap = await getDoc(doc(db,'monthly_status', mid, 'users', user.uid))
       const ok = snap.exists() && !!snap.data().done
       if (ok) s += 1; else break
     }
@@ -132,22 +132,22 @@ export default function MonthlyChallenge(){
     try {
       const next = !completed
 
-      // 1) write monthly_status/{activeMid}/{uid}
+      // write monthly_status/{monthId}/users/{uid}
       await setDoc(
-        doc(db,'monthly_status', activeMid, user.uid),
+        doc(db, 'monthly_status', activeMid, 'users', user.uid),
         { done: next, ts: Date.now() },
-        { merge:true }
+        { merge: true }
       )
 
-      // 2) bump lifetime counter if marking done
+      // bump lifetime counter if marking done
       if (next) {
         const meSnap = await getDoc(doc(db,'profiles', user.uid))
         const cur = meSnap.exists() ? (meSnap.data().monthlyDoneCount || 0) : 0
-        await setDoc(doc(db,'profiles', user.uid), { monthlyDoneCount: cur + 1 }, { merge:true })
+        await setDoc(doc(db, 'profiles', user.uid), { monthlyDoneCount: cur + 1 }, { merge: true })
       }
 
-      // 3) re-read fresh so UI reflects DB
-      const statusSnap = await getDoc(doc(db,'monthly_status', activeMid, user.uid))
+      // re-read fresh so UI reflects DB
+      const statusSnap = await getDoc(doc(db, 'monthly_status', activeMid, 'users', user.uid))
       setCompleted(statusSnap.exists() ? !!statusSnap.data().done : false)
 
       const me2 = await getDoc(doc(db,'profiles', user.uid))
