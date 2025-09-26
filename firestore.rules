@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner(userId) { return signedIn() && request.auth.uid == userId; }
+    function isMentor() { return signedIn() && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'mentor'; }
+
+    match /config/{docId} { allow read: if true; allow write: if isMentor(); }
+    match /meta/{docId} { allow read: if true; allow write: if isMentor(); }
+
+    match /profiles/{userId} {
+      allow read: if signedIn();
+      allow write: if isMentor() ||
+        (isOwner(userId) &&
+          request.resource.data.tier == resource.data.tier &&
+          request.resource.data.isCommitted == resource.data.isCommitted &&
+          request.resource.data.role == resource.data.role);
+    }
+
+    match /weekly_logs/{userId}/{logId} {
+      allow read: if signedIn();
+      allow create: if isOwner(userId);
+      allow update, delete: if isOwner(userId) || isMentor();
+    }
+
+    match /monthly_status/{monthId}/{userId} {
+      allow read: if signedIn();
+      allow write: if isOwner(userId) || isMentor();
+    }
+
+    match /standards/{userId} { allow read, write: if isOwner(userId) || isMentor(); }
+    match /totals/{userId} { allow read: if true; allow write: if isOwner(userId); }
+    match /logs/{userId}/{doc=**} { allow read, write: if isOwner(userId); }
+
+    match /weekly_history/{yearWeek}/{doc=**} { allow read: if signedIn(); allow write: if isMentor(); }
+    match /monthly_history/{monthId}/{doc=**} { allow read: if signedIn(); allow write: if isMentor(); }
+
+    match /stats/{docId} { allow read: if true; allow write: if signedIn(); }
+  }
+}
