@@ -1,3 +1,4 @@
+import Ping from './pages/Ping.jsx'<Route path="/ping" element={<Ping />} />
 import { Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar.jsx'
 import Home from './pages/Home.jsx'
