@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/firebase'
 import { useAuthState } from '../lib/auth'
 import {
-  doc, getDoc, setDoc, updateDoc,
+  doc, getDoc, setDoc,
   collection, getDocs
 } from 'firebase/firestore'
 
@@ -14,8 +14,8 @@ const addMonths = (date, delta) => { const d = new Date(date); d.setMonth(d.getM
 const DEFAULT_MONTHLY = {
   title: 'Monthly Challenge',
   details: 'Complete this month’s challenge and mark it done.',
-  startDate: null,  // '2025-10-01'
-  endDate: null,    // '2025-10-31'
+  startDate: null,  // e.g. '2025-10-01'
+  endDate: null,    // e.g. '2025-10-31'
   targetCompletions: 10
 }
 
@@ -49,7 +49,17 @@ export default function MonthlyChallenge(){
     })
   }, [])
 
-  // Load meta/monthly (global settings for challenge display)
+  // Ensure profile exists (so writes to profiles merge cleanly)
+  useEffect(()=>{(async()=>{
+    if (!user) return
+    await setDoc(doc(db,'profiles', user.uid), {
+      displayName: profile?.displayName || user.displayName || 'Firefighter',
+      shift: profile?.shift || 'A',
+      tier: profile?.tier || 'committed'
+    }, { merge:true })
+  })()}, [user])
+
+  // Load meta/monthly (global settings)
   useEffect(()=>{(async()=>{
     setMetaLoading(true); setMetaErr('')
     try{
@@ -79,7 +89,7 @@ export default function MonthlyChallenge(){
       const profiles = {}
       profilesSnap.docs.forEach(d => profiles[d.id] = { id:d.id, ...d.data() })
 
-      // monthly_status/{mid} documents keyed by userId
+      // monthly_status/{mid} docs keyed by userId
       const col = collection(db,'monthly_status', activeMid)
       const monthSnap = await getDocs(col)
 
@@ -115,38 +125,62 @@ export default function MonthlyChallenge(){
     setStreak(s)
   })()},[user])
 
+  // ---- reliable toggle with re-read ----
   const toggle = async () => {
     if (!user || busy) return
     setBusy(true)
-    try{
+    try {
       const next = !completed
-      setCompleted(next)
-      await setDoc(doc(db,'monthly_status', activeMid, user.uid), { done: next, ts: Date.now() }, { merge:true })
+
+      // 1) write monthly_status/{activeMid}/{uid}
+      await setDoc(
+        doc(db,'monthly_status', activeMid, user.uid),
+        { done: next, ts: Date.now() },
+        { merge:true }
+      )
+
+      // 2) bump lifetime counter if marking done
       if (next) {
-        await setDoc(doc(db,'profiles', user.uid), { monthlyDoneCount: (count || 0) + 1 }, { merge:true })
-        setCount(c => (c||0)+1)
+        const meSnap = await getDoc(doc(db,'profiles', user.uid))
+        const cur = meSnap.exists() ? (meSnap.data().monthlyDoneCount || 0) : 0
+        await setDoc(doc(db,'profiles', user.uid), { monthlyDoneCount: cur + 1 }, { merge:true })
       }
-    }finally{
+
+      // 3) re-read fresh so UI reflects DB
+      const statusSnap = await getDoc(doc(db,'monthly_status', activeMid, user.uid))
+      setCompleted(statusSnap.exists() ? !!statusSnap.data().done : false)
+
+      const me2 = await getDoc(doc(db,'profiles', user.uid))
+      setCount(me2.exists() ? (me2.data().monthlyDoneCount || 0) : 0)
+
+    } catch (e) {
+      console.error('Monthly toggle failed:', e)
+      alert('Could not save monthly status: ' + (e?.code || e?.message || e))
+    } finally {
       setBusy(false)
     }
   }
 
-  // Mentor: edit and save monthly meta
+  // Mentor: inline edit monthly meta
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(DEFAULT_MONTHLY)
   useEffect(()=>{ setForm(meta) }, [meta])
 
   const saveMeta = async () => {
-    await setDoc(doc(db,'meta','monthly'), {
-      title: (form.title||'').trim() || DEFAULT_MONTHLY.title,
-      details: (form.details||'').trim() || DEFAULT_MONTHLY.details,
-      startDate: form.startDate || null,
-      endDate: form.endDate || null,
-      targetCompletions: Number(form.targetCompletions)||0
-    }, { merge:true })
-    setMeta(prev => ({...prev, ...form}))
-    setEditing(false)
-    alert('Monthly challenge updated.')
+    try {
+      await setDoc(doc(db,'meta','monthly'), {
+        title: (form.title||'').trim() || DEFAULT_MONTHLY.title,
+        details: (form.details||'').trim() || DEFAULT_MONTHLY.details,
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        targetCompletions: Number(form.targetCompletions)||0
+      }, { merge:true })
+      setMeta(prev => ({...prev, ...form}))
+      setEditing(false)
+      alert('Monthly challenge updated.')
+    } catch (e) {
+      alert('Could not update monthly settings: ' + (e?.message || e))
+    }
   }
 
   // Derived
@@ -261,7 +295,9 @@ export default function MonthlyChallenge(){
       </div>
 
       <div className="bg-white border rounded-xl p-4">
-        <div className="text-lg font-semibold mb-2">{monthOptions.find(m=>m.id===activeMid)?.label || 'This month'} — Completions</div>
+        <div className="text-lg font-semibold mb-2">
+          {(monthOptions.find(m=>m.id===activeMid)?.label || 'This month')} — Completions
+        </div>
         <ul className="space-y-1">
           {doneList.length ? doneList.map(p => (
             <li key={p.uid} className="flex items-center justify-between border rounded px-3 py-2">
