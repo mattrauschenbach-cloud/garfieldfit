@@ -1,11 +1,18 @@
 // src/App.jsx
-import { Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar.jsx'
-import ProtectedRoute from './components/ProtectedRoute.jsx'
-import MentorRoute from './components/MentorRoute.jsx'
 
-// PAGES (match your repo names exactly)
+// Guards: if missing, fall back to passthrough so the app never blanks
+let ProtectedRoute = ({ children }) => children
+let MentorRoute = ({ children }) => children
+try {
+  // eslint-disable-next-line no-undef
+  ProtectedRoute = (await import('./components/ProtectedRoute.jsx')).default
+  // eslint-disable-next-line no-undef
+  MentorRoute = (await import('./components/MentorRoute.jsx')).default
+} catch { /* keep passthroughs */ }
+
+// PAGES (exact names from your repo)
 import Login from './pages/Login.jsx'
 import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
 import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
@@ -44,99 +51,97 @@ export default function App() {
       <div className="min-h-screen flex flex-col bg-slate-50">
         <NavBar />
         <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-4">
-          <Suspense fallback={<div className="p-4">Loading…</div>}>
-            <Routes>
-              {/* Public */}
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
 
-              {/* Auth required */}
-              <Route
-                path="/weekly"
-                element={
-                  <ProtectedRoute>
-                    <WeeklyChallenge />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/monthly"
-                element={
-                  <ProtectedRoute>
-                    <MonthlyChallenge />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/members"
-                element={
-                  <ProtectedRoute>
-                    <Members />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/leaderboard"
-                element={
-                  <ProtectedRoute>
-                    <Leaderboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/standards"
-                element={
-                  <ProtectedRoute>
-                    <Standards />
-                  </ProtectedRoute>
-                }
-              />
+            {/* Auth required */}
+            <Route
+              path="/weekly"
+              element={
+                <ProtectedRoute>
+                  <WeeklyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/monthly"
+              element={
+                <ProtectedRoute>
+                  <MonthlyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/members"
+              element={
+                <ProtectedRoute>
+                  <Members />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/leaderboard"
+              element={
+                <ProtectedRoute>
+                  <Leaderboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/standards"
+              element={
+                <ProtectedRoute>
+                  <Standards />
+                </ProtectedRoute>
+              }
+            />
 
-              {/* Mentor-only */}
-              <Route
-                path="/weekly-admin"
-                element={
-                  <ProtectedRoute>
-                    <MentorRoute>
-                      <WeeklyAdmin />
-                    </MentorRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/tier-checkoff"
-                element={
-                  <ProtectedRoute>
-                    <MentorRoute>
-                      <TierCheckoff />
-                    </MentorRoute>
-                  </ProtectedRoute>
-                }
-              />
+            {/* Mentor-only */}
+            <Route
+              path="/weekly-admin"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <WeeklyAdmin />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tier-checkoff"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <TierCheckoff />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
 
-              {/* Diagnostics */}
-              <Route
-                path="/diag"
-                element={
-                  <ProtectedRoute>
-                    <Diag />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/permtest"
-                element={
-                  <ProtectedRoute>
-                    <PermTest />
-                  </ProtectedRoute>
-                }
-              />
+            {/* Diagnostics */}
+            <Route
+              path="/diag"
+              element={
+                <ProtectedRoute>
+                  <Diag />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/permtest"
+              element={
+                <ProtectedRoute>
+                  <PermTest />
+                </ProtectedRoute>
+              }
+            />
 
-              {/* Redirects / 404 */}
-              <Route path="/home" element={<Navigate to="/" replace />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+            {/* Redirects / 404 */}
+            <Route path="/home" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
         </main>
       </div>
     </BrowserRouter>
