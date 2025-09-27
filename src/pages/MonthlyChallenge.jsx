@@ -1,312 +1,257 @@
+// src/pages/MonthlyChallenge.jsx
 import { useEffect, useMemo, useState } from 'react'
-import { db } from '../lib/firebase'
-import { useAuthState } from '../lib/auth'
+import { auth, db } from '../lib/firebase'
 import {
-  doc, getDoc, setDoc,
-  collection, getDocs
+  collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query,
+  serverTimestamp, setDoc
 } from 'firebase/firestore'
 
-// helpers
-const pad2 = (n)=> String(n).padStart(2,'0')
-const monthId = (d=new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}`
-const addMonths = (date, delta) => { const d = new Date(date); d.setMonth(d.getMonth()+delta); return d }
-
-const DEFAULT_MONTHLY = {
-  title: 'Monthly Challenge',
-  details: 'Complete this month’s challenge and mark it done.',
-  startDate: null,  // e.g. '2025-10-01'
-  endDate: null,    // e.g. '2025-10-31'
-  targetCompletions: 10
+/** Month id like "2025-09" */
+function getMonthId(d = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
 }
 
-export default function MonthlyChallenge(){
-  const { user, profile } = useAuthState()
-  const isMentor = profile?.role === 'mentor'
+function getPrevMonthId(monthId) {
+  const [yy, mm] = monthId.split('-').map(Number)
+  const d = new Date(yy, mm - 1, 1)
+  d.setMonth(d.getMonth() - 1)
+  return getMonthId(d)
+}
 
-  // UI state
-  const [activeMid, setActiveMid] = useState(monthId())
-  const [meta, setMeta] = useState(DEFAULT_MONTHLY)
-  const [metaLoading, setMetaLoading] = useState(true)
-  const [metaErr, setMetaErr] = useState('')
+export default function MonthlyChallenge() {
+  const [monthId] = useState(getMonthId())
+  const [meta, setMeta] = useState({ title: 'Monthly Challenge', details: '' })
 
-  const [completed, setCompleted] = useState(false)
-  const [count, setCount] = useState(0) // lifetime
-  const [busy, setBusy] = useState(false)
+  const [myCompleted, setMyCompleted] = useState(false)
+  const [myNotes, setMyNotes] = useState('')
+  const [myShift, setMyShift] = useState('A')
+  const [saving, setSaving] = useState(false)
 
-  const [doneList, setDoneList] = useState([]) // [{uid,name,shift,ts}]
-  const [shiftTotals, setShiftTotals] = useState({A:0,B:0,C:0})
+  const [entries, setEntries] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  const [streak, setStreak] = useState(0) // last 6 months streak
+  const [streak, setStreak] = useState(0)
 
-  // Month picker options (current, last, -2)
-  const monthOptions = useMemo(() => {
-    const now = new Date()
-    return [0,-1,-2].map(off => {
-      const d = addMonths(now, off)
-      const id = monthId(d)
-      const label = d.toLocaleString(undefined, { month:'long', year:'numeric' })
-      return { id, label }
-    })
+  // Load optional meta from /meta/monthly
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'meta', 'monthly'))
+        if (snap.exists()) setMeta({ ...meta, ...snap.data() })
+      } catch { /* ignore */ }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Ensure profile exists (so writes to profiles merge cleanly)
-  useEffect(()=>{(async()=>{
-    if (!user) return
-    await setDoc(doc(db,'profiles', user.uid), {
-      displayName: profile?.displayName || user.displayName || 'Firefighter',
-      shift: profile?.shift || 'A',
-      tier: profile?.tier || 'committed'
-    }, { merge:true })
-  })()}, [user])
-
-  // Load meta/monthly (global settings)
-  useEffect(()=>{(async()=>{
-    setMetaLoading(true); setMetaErr('')
-    try{
-      const s = await getDoc(doc(db,'meta','monthly'))
-      setMeta(s.exists() ? { ...DEFAULT_MONTHLY, ...s.data() } : DEFAULT_MONTHLY)
-    }catch(e){
-      console.error(e); setMeta(DEFAULT_MONTHLY); setMetaErr(e?.message || 'Failed to load monthly settings.')
-    }finally{
-      setMetaLoading(false)
-    }
-  })()},[])
-
-  // My current month status + lifetime count
-  useEffect(()=>{(async()=>{
-    if (!user) return
-    const snap = await getDoc(doc(db,'monthly_status', activeMid, 'users', user.uid))
-    setCompleted(snap.exists() ? !!snap.data().done : false)
-    const me = await getDoc(doc(db,'profiles', user.uid))
-    setCount(me.exists() ? (me.data().monthlyDoneCount || 0) : 0)
-  })()},[user, activeMid])
-
-  // Who completed this month + shift totals
-  useEffect(()=>{(async()=>{
-    try{
-      // profiles for names/shifts
-      const profilesSnap = await getDocs(collection(db,'profiles'))
-      const profiles = {}
-      profilesSnap.docs.forEach(d => profiles[d.id] = { id:d.id, ...d.data() })
-
-      // monthly_status/{mid}/users docs keyed by userId
-      const col = collection(db,'monthly_status', activeMid, 'users')
-      const monthSnap = await getDocs(col)
-
-      const arr = []
-      const byShift = {A:0,B:0,C:0}
-      monthSnap.docs.forEach(d => {
-        const data = d.data()
-        if (data?.done) {
-          const p = profiles[d.id] || {}
-          const shift = p.shift || 'A'
-          arr.push({ uid: d.id, name: p.displayName || 'Firefighter', shift, ts: data.ts || null })
-          byShift[shift] = (byShift[shift] || 0) + 1
+  // Subscribe to this month's entries
+  useEffect(() => {
+    setLoading(true)
+    const q = query(collection(db, 'monthly_logs', monthId, 'entries'), orderBy('completed', 'desc'))
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      setEntries(list)
+      setLoading(false)
+      // hydrate my state from my entry if present
+      const uid = auth.currentUser?.uid
+      if (uid) {
+        const mine = list.find(x => x.id === uid)
+        if (mine) {
+          setMyCompleted(!!mine.completed)
+          setMyNotes(mine.notes || '')
+          if (mine.shift) setMyShift(mine.shift)
         }
-      })
-      arr.sort((a,b)=> (b.ts||0) - (a.ts||0))
-      setDoneList(arr)
-      setShiftTotals(byShift)
-    }catch(e){
-      console.error('monthly load error', e)
-    }
-  })()},[activeMid])
+      }
+    }, () => setLoading(false))
+    return () => unsub()
+  }, [monthId])
 
-  // Streak over last 6 months for current user
-  useEffect(()=>{(async()=>{
-    if (!user) return
-    let s = 0
-    for (let i=0;i<6;i++){
-      const mid = monthId(addMonths(new Date(), -i))
-      const snap = await getDoc(doc(db,'monthly_status', mid, 'users', user.uid))
-      const ok = snap.exists() && !!snap.data().done
-      if (ok) s += 1; else break
+  // Compute shift completion counts
+  const shiftCounts = useMemo(() => {
+    const t = { A: 0, B: 0, C: 0 }
+    for (const e of entries) {
+      if (e.completed) {
+        const s = (e.shift || 'A').toUpperCase()
+        if (t[s] == null) t[s] = 0
+        t[s] += 1
+      }
     }
-    setStreak(s)
-  })()},[user])
+    return t
+  }, [entries])
 
-  // ---- reliable toggle with re-read ----
-  const toggle = async () => {
-    if (!user || busy) return
-    setBusy(true)
+  const completedList = useMemo(
+    () => entries.filter(e => !!e.completed).slice(0, 30),
+    [entries]
+  )
+
+  // Streak calculator: look back up to N months until a miss
+  useEffect(() => {
+    (async () => {
+      const uid = auth.currentUser?.uid
+      if (!uid) { setStreak(0); return }
+      let s = 0
+      let cur = monthId
+      // cap at 36 months to keep it light
+      for (let i = 0; i < 36; i++) {
+        try {
+          const snap = await getDoc(doc(db, 'monthly_logs', cur, 'entries', uid))
+          if (snap.exists() && snap.data().completed) {
+            s += 1
+            cur = getPrevMonthId(cur)
+          } else {
+            break
+          }
+        } catch {
+          break
+        }
+      }
+      setStreak(s)
+    })()
+  }, [monthId])
+
+  async function save() {
+    const user = auth.currentUser
+    if (!user) return alert('Please sign in first.')
+
+    setSaving(true)
     try {
-      const next = !completed
-
-      // write monthly_status/{monthId}/users/{uid}
       await setDoc(
-        doc(db, 'monthly_status', activeMid, 'users', user.uid),
-        { done: next, ts: Date.now() },
+        doc(db, 'monthly_logs', monthId, 'entries', user.uid),
+        {
+          ownerId: user.uid,               // REQUIRED by Firestore rules
+          completed: !!myCompleted,
+          notes: myNotes || '',
+          shift: (myShift || 'A').toUpperCase(),
+          displayName: user.displayName || 'Firefighter',
+          updatedAt: serverTimestamp(),
+          // Create time on first write
+          createdAt: serverTimestamp(),
+        },
         { merge: true }
       )
-
-      // bump lifetime counter if marking done
-      if (next) {
-        const meSnap = await getDoc(doc(db,'profiles', user.uid))
-        const cur = meSnap.exists() ? (meSnap.data().monthlyDoneCount || 0) : 0
-        await setDoc(doc(db, 'profiles', user.uid), { monthlyDoneCount: cur + 1 }, { merge: true })
-      }
-
-      // re-read fresh so UI reflects DB
-      const statusSnap = await getDoc(doc(db, 'monthly_status', activeMid, 'users', user.uid))
-      setCompleted(statusSnap.exists() ? !!statusSnap.data().done : false)
-
-      const me2 = await getDoc(doc(db,'profiles', user.uid))
-      setCount(me2.exists() ? (me2.data().monthlyDoneCount || 0) : 0)
-
     } catch (e) {
-      console.error('Monthly toggle failed:', e)
-      alert('Could not save monthly status: ' + (e?.code || e?.message || e))
+      console.error(e)
+      alert('Could not save monthly status. ' + (e.message || e.code))
     } finally {
-      setBusy(false)
+      setSaving(false)
     }
   }
-
-  // Mentor: inline edit monthly meta
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState(DEFAULT_MONTHLY)
-  useEffect(()=>{ setForm(meta) }, [meta])
-
-  const saveMeta = async () => {
-    try {
-      await setDoc(doc(db,'meta','monthly'), {
-        title: (form.title||'').trim() || DEFAULT_MONTHLY.title,
-        details: (form.details||'').trim() || DEFAULT_MONTHLY.details,
-        startDate: form.startDate || null,
-        endDate: form.endDate || null,
-        targetCompletions: Number(form.targetCompletions)||0
-      }, { merge:true })
-      setMeta(prev => ({...prev, ...form}))
-      setEditing(false)
-      alert('Monthly challenge updated.')
-    } catch (e) {
-      alert('Could not update monthly settings: ' + (e?.message || e))
-    }
-  }
-
-  // Derived
-  const totalDone = doneList.length
-  const target = Number(meta?.targetCompletions)||0
-  const pct = target ? Math.min(100, Math.round(totalDone/target*100)) : 0
-
-  const dateRange = (() => {
-    if (!meta?.startDate && !meta?.endDate) return ''
-    const fmt = (s)=> s ? new Date(s).toLocaleDateString() : ''
-    return `${fmt(meta.startDate)}${meta.startDate && meta.endDate ? ' – ' : ''}${fmt(meta.endDate)}`
-  })()
-
-  if (metaLoading) return <div className="p-6">Loading monthly challenge…</div>
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center gap-3">
-        <h2 className="text-2xl font-bold">Monthly Challenge</h2>
-        <div className="ml-auto flex gap-2">
-          <select
-            className="border rounded px-3 py-2 bg-white"
-            value={activeMid}
-            onChange={e=>setActiveMid(e.target.value)}
-          >
-            {monthOptions.map(m=>(
-              <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
-          {isMentor && !editing && (
-            <button className="border rounded px-3 py-2" onClick={()=>setEditing(true)}>Edit</button>
-          )}
+    <div className="vstack" style={{ gap: 12 }}>
+      {/* Header */}
+      <div className="card pad vstack" style={{ gap: 8 }}>
+        <div className="title">{meta.title || 'Monthly Challenge'}</div>
+        <div className="sub">
+          Month <span className="mono">{monthId}</span>
+        </div>
+        {meta.details ? (
+          <div style={{ color:'#334155', fontSize:14 }}>{meta.details}</div>
+        ) : null}
+      </div>
+
+      {/* My status */}
+      <div className="card pad vstack" style={{ gap: 12 }}>
+        <div className="title">Your month</div>
+
+        <div className="grid2">
+          <div>
+            <div className="label">Status</div>
+            <select
+              value={myCompleted ? 'yes' : 'no'}
+              onChange={(e)=>setMyCompleted(e.target.value === 'yes')}
+            >
+              <option value="no">Not completed</option>
+              <option value="yes">Completed</option>
+            </select>
+          </div>
+          <div>
+            <div className="label">Shift</div>
+            <select value={myShift} onChange={(e)=>setMyShift(e.target.value)}>
+              <option value="A">A Shift</option>
+              <option value="B">B Shift</option>
+              <option value="C">C Shift</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div className="label">Notes</div>
+          <textarea
+            rows={3}
+            placeholder="Optional notes about your completion…"
+            value={myNotes}
+            onChange={(e)=>setMyNotes(e.target.value)}
+          />
+        </div>
+
+        <button className="btn primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save monthly status'}
+        </button>
+
+        <div className="hstack" style={{ justifyContent:'space-between' }}>
+          <div className="sub">Monthly streak</div>
+          <div className="title">{streak}</div>
         </div>
       </div>
 
-      {/* Meta display / edit */}
-      <div className="bg-white border rounded-xl p-4 space-y-3 max-w-2xl">
-        {!editing ? (
-          <>
-            <div className="text-lg font-semibold">{meta?.title || DEFAULT_MONTHLY.title}</div>
-            {dateRange && <div className="text-sm text-slate-600">{dateRange}</div>}
-            <div className="text-slate-700 whitespace-pre-wrap">{meta?.details || DEFAULT_MONTHLY.details}</div>
-            {metaErr && <div className="text-sm text-red-600">Note: {metaErr}</div>}
-            {/* Progress */}
-            <div className="pt-2">
-              <div className="text-sm text-slate-600">
-                Completions: {totalDone}/{target || '—'} {target ? `(${pct}%)` : ''}
-              </div>
-              <div className="w-full h-3 bg-slate-200 rounded">
-                <div className="h-3 bg-slate-900 rounded" style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          </>
+      {/* Shift completion counts */}
+      <div className="card pad vstack" style={{ gap: 8 }}>
+        <div className="title">Completions by shift</div>
+        <ShiftRow label="A Shift" badge="A" value={shiftCounts.A} />
+        <ShiftRow label="B Shift" badge="B" value={shiftCounts.B} />
+        <ShiftRow label="C Shift" badge="C" value={shiftCounts.C} />
+      </div>
+
+      {/* Recent completions */}
+      <div className="card pad vstack" style={{ gap: 10 }}>
+        <div className="title">Completed this month</div>
+        {loading ? (
+          <div className="sub">Loading…</div>
+        ) : completedList.length === 0 ? (
+          <div className="sub">No one has marked this month as completed yet.</div>
         ) : (
-          <div className="space-y-2">
-            <div className="font-semibold">Edit Monthly Challenge</div>
-            <input
-              className="border rounded px-3 py-2 w-full"
-              placeholder="Title"
-              value={form.title||''}
-              onChange={e=>setForm(f=>({...f, title:e.target.value}))}
-            />
-            <textarea
-              className="border rounded px-3 py-2 w-full min-h-[100px]"
-              placeholder="Details (multiline ok)"
-              value={form.details||''}
-              onChange={e=>setForm(f=>({...f, details:e.target.value}))}
-            />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input className="border rounded px-3 py-2" type="date"
-                value={form.startDate||''}
-                onChange={e=>setForm(f=>({...f, startDate:e.target.value}))}
+          <div className="vstack" style={{ gap: 6 }}>
+            {completedList.map((e, i) => (
+              <CompletedRow
+                key={e.id}
+                name={e.displayName || 'Firefighter'}
+                shift={(e.shift || 'A').toUpperCase()}
+                notes={e.notes || ''}
               />
-              <input className="border rounded px-3 py-2" type="date"
-                value={form.endDate||''}
-                onChange={e=>setForm(f=>({...f, endDate:e.target.value}))}
-              />
-              <input className="border rounded px-3 py-2" type="number" min="0"
-                placeholder="Target completions"
-                value={form.targetCompletions ?? 0}
-                onChange={e=>setForm(f=>({...f, targetCompletions:e.target.value}))}
-              />
-            </div>
-            <div className="flex gap-2">
-              <button className="px-3 py-2 rounded bg-slate-900 text-white" onClick={saveMeta}>Save</button>
-              <button className="px-3 py-2 rounded border" onClick={()=>{ setEditing(false); setForm(meta) }}>Cancel</button>
-            </div>
+            ))}
           </div>
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* Member actions */}
-      {user && (
-        <div className="bg-white border rounded-xl p-4 space-y-2 max-w-xl">
-          <button disabled={busy} onClick={toggle} className="px-3 py-2 rounded bg-slate-900 text-white disabled:opacity-50">
-            {completed ? 'Completed ✅ (click to undo)' : 'Mark monthly challenge completed'}
-          </button>
-          <div className="text-sm text-slate-600">
-            Lifetime monthly completions: <b>{count}</b> • Current streak: <b>{streak}</b> month{streak===1?'':'s'}
-          </div>
-        </div>
-      )}
-
-      {/* Shift breakdown + who finished */}
-      <div className="grid md:grid-cols-3 gap-3">
-        {['A','B','C'].map(s=>(
-          <div key={s} className="border rounded-xl bg-white p-4">
-            <div className="text-sm text-slate-600">Shift {s}</div>
-            <div className="text-2xl font-bold">{shiftTotals[s] || 0}</div>
-          </div>
-        ))}
+function ShiftRow({ label, badge, value }) {
+  return (
+    <div className="hstack" style={{ justifyContent:'space-between' }}>
+      <div className="hstack" style={{ gap:8 }}>
+        <span className="badge shift">{badge}</span>
+        <div style={{ fontWeight:800 }}>{label}</div>
       </div>
+      <div className="title">{Number(value || 0)}</div>
+    </div>
+  )
+}
 
-      <div className="bg-white border rounded-xl p-4">
-        <div className="text-lg font-semibold mb-2">
-          {(monthOptions.find(m=>m.id===activeMid)?.label || 'This month')} — Completions
-        </div>
-        <ul className="space-y-1">
-          {doneList.length ? doneList.map(p => (
-            <li key={p.uid} className="flex items-center justify-between border rounded px-3 py-2">
-              <span>{p.name} <span className="text-xs text-slate-500">• Shift {p.shift}</span></span>
-              <span className="text-sm text-slate-500">{p.ts ? new Date(p.ts).toLocaleString() : ''}</span>
-            </li>
-          )) : <li className="text-sm text-slate-500">No one has finished yet.</li>}
-        </ul>
+function CompletedRow({ name, shift, notes }) {
+  return (
+    <div className="hstack" style={{
+      justifyContent:'space-between', alignItems:'flex-start',
+      padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:12
+    }}>
+      <div>
+        <div style={{ fontWeight:800 }}>{name}</div>
+        <div className="sub">Shift {shift}</div>
+        {notes ? <div style={{ marginTop:6, color:'#334155', fontSize:14 }}>{notes}</div> : null}
       </div>
-    </section>
+      <div className="badge" style={{ background:'#dcfce7', color:'#166534' }}>Done</div>
+    </div>
   )
 }
