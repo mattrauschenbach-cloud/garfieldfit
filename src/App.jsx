@@ -1,28 +1,27 @@
 // src/App.jsx
-import { Suspense } from 'react'
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import MentorRoute from './components/MentorRoute.jsx'
 
-// PAGES
-import Login from './pages/Login.jsx'
-import Weekly from './pages/Weekly.jsx'
-import Monthly from './pages/Monthly.jsx'
-import Members from './pages/Members.jsx'
-import Leaderboard from './pages/Leaderboard.jsx'
-import Standards from './pages/Standards.jsx'
-import WeeklyAdmin from './pages/WeeklyAdmin.jsx'
-import TierCheckoff from './pages/TierCheckoff.jsx'
-import Diag from './pages/Diag.jsx'
-import PermTest from './pages/PermTest.jsx'
+// Lazy-load pages (keeps bundle lean, shows fallback while loading)
+const Login        = lazy(() => import('./pages/Login.jsx'))
+const Weekly       = lazy(() => import('./pages/Weekly.jsx'))
+const Monthly      = lazy(() => import('./pages/Monthly.jsx'))
+const Members      = lazy(() => import('./pages/Members.jsx'))
+const Leaderboard  = lazy(() => import('./pages/Leaderboard.jsx'))
+const Standards    = lazy(() => import('./pages/Standards.jsx'))
+const WeeklyAdmin  = lazy(() => import('./pages/WeeklyAdmin.jsx'))
+const TierCheckoff = lazy(() => import('./pages/TierCheckoff.jsx'))
+const Diag         = lazy(() => import('./pages/Diag.jsx'))
+const PermTest     = lazy(() => import('./pages/PermTest.jsx'))
 
-// Optional: a simple home page
 function Home() {
   return (
     <div className="p-4">
       <h2 className="text-2xl font-bold">Station 1 Fit</h2>
-      <p className="text-slate-600 mt-1">Welcome. Use the navigation above to get started.</p>
+      <p className="text-slate-600 mt-1">Use the navigation above to get started.</p>
     </div>
   )
 }
@@ -32,6 +31,9 @@ function NotFound() {
     <div className="p-4">
       <h2 className="text-xl font-bold">Page not found</h2>
       <p className="text-slate-600 mt-1">That route doesn’t exist.</p>
+      <div className="mt-3">
+        <a className="text-blue-600 underline" href="/">Go home</a>
+      </div>
     </div>
   )
 }
@@ -114,7 +116,7 @@ export default function App() {
                 }
               />
 
-              {/* Diagnostics */}
+              {/* Diagnostics (auth required so env/uid/role load) */}
               <Route
                 path="/diag"
                 element={
@@ -132,10 +134,10 @@ export default function App() {
                 }
               />
 
-              {/* Legacy / redirects if needed */}
+              {/* Legacy/redirects if needed */}
               <Route path="/home" element={<Navigate to="/" replace />} />
 
-              {/* Catch-all */}
+              {/* 404 */}
               <Route path="*" element={<NotFound />} />
             </Routes>
 
