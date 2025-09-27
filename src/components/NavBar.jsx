@@ -6,31 +6,54 @@ export default function NavBar() {
   const isMentor = profile?.role === 'mentor'
 
   return (
-    <nav className="bg-slate-900 text-white px-4 py-3">
-      <div className="flex items-center gap-4">
-        <Link to="/" className="font-bold text-lg">Station 1 Fit</Link>
+    <nav style={{ background:'#0f172a', color:'#fff', padding:'12px 16px' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        {/* Brand */}
+        <Link to="/" style={{ fontWeight:700, fontSize:18, color:'#fff', textDecoration:'none' }}>
+          Station 1 Fit
+        </Link>
 
+        {/* Main links (only when signed in) */}
         {user && (
-          <div className="flex gap-3">
-            <Link to="/weekly">Weekly</Link>
-            <Link to="/monthly">Monthly</Link>
-            <Link to="/members">Members</Link>
-            <Link to="/leaderboard">Leaderboard</Link>
-            <Link to="/standards">Standards</Link>
+          <div style={{ display:'flex', gap:12 }}>
+            <Link to="/weekly" style={{ color:'#fff' }}>Weekly</Link>
+            <Link to="/monthly" style={{ color:'#fff' }}>Monthly</Link>
+            <Link to="/members" style={{ color:'#fff' }}>Members</Link>
+            <Link to="/leaderboard" style={{ color:'#fff' }}>Leaderboard</Link>
+            <Link to="/standards" style={{ color:'#fff' }}>Standards</Link>
             {isMentor && (
               <>
-                <Link to="/weekly-admin">Weekly Admin</Link>
-                <Link to="/tier-checkoff">Tier Checkoff</Link>
+                <Link to="/weekly-admin" style={{ color:'#fff' }}>Weekly Admin</Link>
+                <Link to="/tier-checkoff" style={{ color:'#fff' }}>Tier Checkoff</Link>
               </>
             )}
           </div>
         )}
 
-        <div className="ml-auto flex gap-3 items-center">
+        {/* RIGHT SIDE: Login/Logout + debug */}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+          {/* DEBUG BADGE (shows role + project id) */}
+          {user && (
+            <div style={{ fontSize:12, background:'rgba(255,255,255,0.12)', padding:'4px 8px', borderRadius:6 }}>
+              <div>role: <b>{profile?.role || '—'}</b></div>
+              <div>proj: {import.meta.env.VITE_FIREBASE_PROJECT_ID || '—'}</div>
+            </div>
+          )}
+
           {!user ? (
-            <Link to="/login" className="bg-white text-slate-900 px-3 py-1 rounded">Login</Link>
+            <Link
+              to="/login"
+              style={{ background:'#fff', color:'#0f172a', padding:'6px 10px', borderRadius:6, textDecoration:'none' }}
+            >
+              Login
+            </Link>
           ) : (
-            <button onClick={() => signOut()} className="bg-white text-slate-900 px-3 py-1 rounded">Logout</button>
+            <button
+              onClick={() => signOut()}
+              style={{ background:'#fff', color:'#0f172a', padding:'6px 10px', borderRadius:6, cursor:'pointer', border:'none' }}
+            >
+              Logout
+            </button>
           )}
         </div>
       </div>
