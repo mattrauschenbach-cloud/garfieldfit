@@ -19,8 +19,10 @@ import Standards from './pages/Standards.jsx'
 import MentorStandards from './pages/MentorStandards.jsx'
 import StandardsImport from './pages/StandardsImport.jsx'
 import TierCheckoff from './pages/TierCheckoff.jsx'
-import Ping from './pages/Ping.jsx'        // optional test page
-import Diag from './pages/Diag.jsx'        // optional diagnostics page
+
+// Optional utility pages (keep or remove these two lines if you want)
+import Ping from './pages/Ping.jsx'
+import Diag from './pages/Diag.jsx'
 
 export default function App() {
   return (
@@ -34,7 +36,7 @@ export default function App() {
           <Route path="/ping" element={<Ping />} />
           <Route path="/diag" element={<Diag />} />
 
-          {/* Members (must be signed in) */}
+          {/* Signed-in members */}
           <Route path="/weekly" element={
             <ProtectedRoute><WeeklyChallenge /></ProtectedRoute>
           } />
@@ -51,11 +53,12 @@ export default function App() {
             <ProtectedRoute><Standards /></ProtectedRoute>
           } />
 
-          {/* Mentor-only areas (must be signed in + mentor) */}
+          {/* Mentor-only tools */}
           <Route path="/weekly-admin" element={
             <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
           } />
-          
+          <Route path="/mentor-standards" element={
+            <ProtectedRoute><MentorRoute><MentorStandards /></MentorRoute></ProtectedRoute>
           } />
           <Route path="/standards-import" element={
             <ProtectedRoute><MentorRoute><StandardsImport /></MentorRoute></ProtectedRoute>
