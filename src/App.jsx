@@ -2,17 +2,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar.jsx'
 
-// Guards: if missing, fall back to passthrough so the app never blanks
-let ProtectedRoute = ({ children }) => children
-let MentorRoute = ({ children }) => children
-try {
-  // eslint-disable-next-line no-undef
-  ProtectedRoute = (await import('./components/ProtectedRoute.jsx')).default
-  // eslint-disable-next-line no-undef
-  MentorRoute = (await import('./components/MentorRoute.jsx')).default
-} catch { /* keep passthroughs */ }
+// Guards (must exist). If you don't have them yet, see stubs below.
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+import MentorRoute from './components/MentorRoute.jsx'
 
-// PAGES (exact names from your repo)
+// PAGES (match your filenames exactly)
 import Login from './pages/Login.jsx'
 import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
 import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
@@ -57,86 +51,19 @@ export default function App() {
             <Route path="/login" element={<Login />} />
 
             {/* Auth required */}
-            <Route
-              path="/weekly"
-              element={
-                <ProtectedRoute>
-                  <WeeklyChallenge />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/monthly"
-              element={
-                <ProtectedRoute>
-                  <MonthlyChallenge />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/members"
-              element={
-                <ProtectedRoute>
-                  <Members />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/leaderboard"
-              element={
-                <ProtectedRoute>
-                  <Leaderboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/standards"
-              element={
-                <ProtectedRoute>
-                  <Standards />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/weekly" element={<ProtectedRoute><WeeklyChallenge /></ProtectedRoute>} />
+            <Route path="/monthly" element={<ProtectedRoute><MonthlyChallenge /></ProtectedRoute>} />
+            <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
+            <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+            <Route path="/standards" element={<ProtectedRoute><Standards /></ProtectedRoute>} />
 
             {/* Mentor-only */}
-            <Route
-              path="/weekly-admin"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <WeeklyAdmin />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/tier-checkoff"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <TierCheckoff />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/weekly-admin" element={<ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>} />
+            <Route path="/tier-checkoff" element={<ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>} />
 
             {/* Diagnostics */}
-            <Route
-              path="/diag"
-              element={
-                <ProtectedRoute>
-                  <Diag />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/permtest"
-              element={
-                <ProtectedRoute>
-                  <PermTest />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/diag" element={<ProtectedRoute><Diag /></ProtectedRoute>} />
+            <Route path="/permtest" element={<ProtectedRoute><PermTest /></ProtectedRoute>} />
 
             {/* Redirects / 404 */}
             <Route path="/home" element={<Navigate to="/" replace />} />
