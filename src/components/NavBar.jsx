@@ -8,12 +8,8 @@ export default function NavBar() {
   return (
     <nav className="bg-slate-900 text-white px-4 py-3">
       <div className="flex items-center gap-4">
-        {/* Brand / Home */}
-        <Link to="/" className="font-bold text-lg">
-          Station 1 Fit
-        </Link>
+        <Link to="/" className="font-bold text-lg">Station 1 Fit</Link>
 
-        {/* Main links (only visible when signed in) */}
         {user && (
           <div className="flex gap-3">
             <Link to="/weekly">Weekly</Link>
@@ -21,8 +17,6 @@ export default function NavBar() {
             <Link to="/members">Members</Link>
             <Link to="/leaderboard">Leaderboard</Link>
             <Link to="/standards">Standards</Link>
-
-            {/* Mentor-only */}
             {isMentor && (
               <>
                 <Link to="/weekly-admin">Weekly Admin</Link>
@@ -32,22 +26,11 @@ export default function NavBar() {
           </div>
         )}
 
-        {/* Right side actions */}
         <div className="ml-auto flex gap-3 items-center">
           {!user ? (
-            <Link
-              to="/login"
-              className="bg-white text-slate-900 px-3 py-1 rounded"
-            >
-              Login
-            </Link>
+            <Link to="/login" className="bg-white text-slate-900 px-3 py-1 rounded">Login</Link>
           ) : (
-            <button
-              onClick={() => signOut()}
-              className="bg-white text-slate-900 px-3 py-1 rounded"
-            >
-              Logout
-            </button>
+            <button onClick={() => signOut()} className="bg-white text-slate-900 px-3 py-1 rounded">Logout</button>
           )}
         </div>
       </div>
