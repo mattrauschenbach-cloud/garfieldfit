@@ -2,12 +2,13 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 
 // Layout
 import NavBar from './components/NavBar.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 // Auth guards
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import MentorRoute from './components/MentorRoute.jsx'
 
-// Pages
+// Pages (make sure each of these files exists and has a default export)
 import Home from './pages/Home.jsx'
 import Login from './pages/Login.jsx'
 import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
@@ -18,7 +19,7 @@ import Leaderboard from './pages/Leaderboard.jsx'
 import Standards from './pages/Standards.jsx'
 import TierCheckoff from './pages/TierCheckoff.jsx'
 
-// Optional utilities
+// Optional diagnostics
 import Ping from './pages/Ping.jsx'
 import Diag from './pages/Diag.jsx'
 
@@ -26,42 +27,84 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <NavBar />
+
       <main className="flex-1 max-w-6xl w-full mx-auto p-4">
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/ping" element={<Ping />} />
-          <Route path="/diag" element={<Diag />} />
+        <ErrorBoundary>
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/ping" element={<Ping />} />
+            <Route path="/diag" element={<Diag />} />
 
-          {/* Signed-in members */}
-          <Route path="/weekly" element={
-            <ProtectedRoute><WeeklyChallenge /></ProtectedRoute>
-          } />
-          <Route path="/monthly" element={
-            <ProtectedRoute><MonthlyChallenge /></ProtectedRoute>
-          } />
-          <Route path="/members" element={
-            <ProtectedRoute><Members /></ProtectedRoute>
-          } />
-          <Route path="/leaderboard" element={
-            <ProtectedRoute><Leaderboard /></ProtectedRoute>
-          } />
-          <Route path="/standards" element={
-            <ProtectedRoute><Standards /></ProtectedRoute>
-          } />
+            {/* Signed-in members */}
+            <Route
+              path="/weekly"
+              element={
+                <ProtectedRoute>
+                  <WeeklyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/monthly"
+              element={
+                <ProtectedRoute>
+                  <MonthlyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/members"
+              element={
+                <ProtectedRoute>
+                  <Members />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/leaderboard"
+              element={
+                <ProtectedRoute>
+                  <Leaderboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/standards"
+              element={
+                <ProtectedRoute>
+                  <Standards />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Mentor-only */}
-          <Route path="/weekly-admin" element={
-            <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
-          } />
-          <Route path="/tier-checkoff" element={
-            <ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>
-          } />
+            {/* Mentor-only */}
+            <Route
+              path="/weekly-admin"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <WeeklyAdmin />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tier-checkoff"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <TierCheckoff />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
 
-          {/* 404 → Home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* 404 → Home */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       <footer className="py-6 text-center text-sm text-slate-500">
