@@ -1,14 +1,14 @@
+// src/App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import NavBar from './components/NavBar.jsx'
-import Layout from './components/Layout.jsx'
+import AppShell from './components/AppShell.jsx'
 
-// Guards
+// Guards (must exist; if they don’t, temporarily make pass-throughs)
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import MentorRoute from './components/MentorRoute.jsx'
 
-// Pages
-import Home from './pages/Home.jsx'
+// Pages (match your filenames)
 import Login from './pages/Login.jsx'
+import Home from './pages/Home.jsx'              // you already added earlier; if not, keep the Home in App instead
 import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
 import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
 import Members from './pages/Members.jsx'
@@ -22,34 +22,31 @@ import PermTest from './pages/PermTest.jsx'
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col bg-slate-50">
-        <NavBar />
-        <Layout>
-          <Routes>
-            {/* Public */}
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
+      <AppShell>
+        <Routes>
+          {/* Public */}
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
 
-            {/* Auth */}
-            <Route path="/weekly" element={<ProtectedRoute><WeeklyChallenge /></ProtectedRoute>} />
-            <Route path="/monthly" element={<ProtectedRoute><MonthlyChallenge /></ProtectedRoute>} />
-            <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
-            <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-            <Route path="/standards" element={<ProtectedRoute><Standards /></ProtectedRoute>} />
+          {/* Auth */}
+          <Route path="/weekly" element={<ProtectedRoute><WeeklyChallenge /></ProtectedRoute>} />
+          <Route path="/monthly" element={<ProtectedRoute><MonthlyChallenge /></ProtectedRoute>} />
+          <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
+          <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+          <Route path="/standards" element={<ProtectedRoute><Standards /></ProtectedRoute>} />
 
-            {/* Mentor */}
-            <Route path="/weekly-admin" element={<ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>} />
-            <Route path="/tier-checkoff" element={<ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>} />
+          {/* Mentor */}
+          <Route path="/weekly-admin" element={<ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>} />
+          <Route path="/tier-checkoff" element={<ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>} />
 
-            {/* Diagnostics */}
-            <Route path="/diag" element={<ProtectedRoute><Diag /></ProtectedRoute>} />
-            <Route path="/permtest" element={<ProtectedRoute><PermTest /></ProtectedRoute>} />
+          {/* Diagnostics */}
+          <Route path="/diag" element={<ProtectedRoute><Diag /></ProtectedRoute>} />
+          <Route path="/permtest" element={<ProtectedRoute><PermTest /></ProtectedRoute>} />
 
-            <Route path="/home" element={<Navigate to="/" replace />} />
-            <Route path="*" element={<div className="p-4">Page not found</div>} />
-          </Routes>
-        </Layout>
-      </div>
+          <Route path="/home" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<div className="card pad">Page not found</div>} />
+        </Routes>
+      </AppShell>
     </BrowserRouter>
   )
 }
