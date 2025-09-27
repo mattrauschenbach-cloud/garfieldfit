@@ -1,43 +1,52 @@
-import { useEffect, useState, useContext, createContext } from 'react'
-import { auth, provider, db } from './firebase'
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
-import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore'
+import { useEffect, useState } from 'react'
+import { getAuth, onAuthStateChanged, signOut as fbSignOut } from 'firebase/auth'
+import { db } from './firebase'
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 
-const AuthCtx = createContext(null)
+const auth = getAuth()
 
-export function AuthProvider({ children }) {
+export function useAuthState() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Watch Firebase Auth user
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-      if (!u) { setProfile(null); setLoading(false); return }
-
-      const prefName = u.displayName || (u.email ? u.email.split('@')[0] : 'Firefighter')
-      const profileRef = doc(db, 'profiles', u.uid)
-      await setDoc(profileRef, { displayName: prefName, email: u.email || null, photoURL: u.photoURL || null }, { merge: true })
-
-      // ensure personal standards doc has master items
-      const myStdRef = doc(db, 'standards', u.uid)
-      const myStdSnap = await getDoc(myStdRef)
-      if (!myStdSnap.exists() || !Array.isArray(myStdSnap.data().items) || myStdSnap.data().items.length === 0) {
-        const masterSnap = await getDoc(doc(db, 'config', 'standards_master'))
-        const masterItems = masterSnap.exists() ? (masterSnap.data().items || []) : []
-        if (masterItems.length) await setDoc(myStdRef, { items: masterItems }, { merge: true })
-      }
-
-      const unsubProf = onSnapshot(profileRef, (d) => setProfile(d.data()))
       setLoading(false)
-      return () => unsubProf && unsubProf()
+
+      if (u) {
+        // Ensure profile doc exists
+        const ref = doc(db, 'profiles', u.uid)
+        await setDoc(
+          ref,
+          {
+            displayName: u.displayName || 'Firefighter',
+            email: u.email || null,
+            shift: 'A',
+            tier: 'committed',
+            role: 'member', // default
+          },
+          { merge: true }
+        )
+
+        // Listen to profile doc in real time
+        return onSnapshot(ref, (snap) => {
+          setProfile({ id: snap.id, ...snap.data() })
+        })
+      } else {
+        setProfile(null)
+      }
     })
+
     return () => unsub()
   }, [])
 
-  const signInWithGoogle = async () => { await signInWithPopup(auth, provider) }
-  const signOutUser = async () => { await signOut(auth) }
-
-  return <AuthCtx.Provider value={{ user, profile, setProfile, loading, signInWithGoogle, signOutUser }}>{children}</AuthCtx.Provider>
+  return {
+    user,
+    profile,
+    loading,
+    signOut: () => fbSignOut(auth),
+  }
 }
-export function useAuthState(){ return useContext(AuthCtx) }
