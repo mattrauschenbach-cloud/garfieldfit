@@ -1,38 +1,148 @@
+// src/pages/Standards.jsx
 import { useEffect, useState } from 'react'
-import { db } from '../lib/firebase'
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
-import { useAuthState } from '../lib/auth'
+import { db, auth } from '../lib/firebase'
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  orderBy,
+  serverTimestamp,
+} from 'firebase/firestore'
 
 export default function Standards() {
-  const { user } = useAuthState()
-  const [items, setItems] = useState(null)
+  const [attempts, setAttempts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [newAttempt, setNewAttempt] = useState({
+    standard: '',
+    result: '',
+    tier: 'developmental',
+  })
 
-  useEffect(() => { (async ()=>{
-    const meRef = doc(db, 'standards', user.uid)
-    const meSnap = await getDoc(meRef)
-    if (meSnap.exists()) { setItems(meSnap.data().items || []); return }
-    await setDoc(meRef, { items: [] }); setItems([])
-  })() }, [user])
+  // load attempts for current user
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true)
+        const uid = auth.currentUser?.uid
+        if (!uid) {
+          setError('Not signed in')
+          setLoading(false)
+          return
+        }
+        const q = query(
+          collection(db, `profiles/${uid}/standard_attempts`),
+          orderBy('createdAt', 'desc')
+        )
+        const snap = await getDocs(q)
+        setAttempts(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      } catch (e) {
+        console.error('Failed to load standards', e)
+        setError(e.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
 
-  const toggle = async (idx) => {
-    const next = items.map((it, i) => i===idx ? { ...it, done: !it.done } : it)
-    setItems(next)
-    await updateDoc(doc(db, 'standards', user.uid), { items: next })
+  // add new attempt
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    try {
+      const uid = auth.currentUser?.uid
+      if (!uid) return alert('Not signed in')
+      await addDoc(collection(db, `profiles/${uid}/standard_attempts`), {
+        ...newAttempt,
+        ownerId: uid,
+        createdAt: serverTimestamp(),
+      })
+      setNewAttempt({ standard: '', result: '', tier: 'developmental' })
+      alert('Attempt logged')
+    } catch (e) {
+      console.error('Error saving attempt', e)
+      alert('Error: ' + e.message)
+    }
   }
 
-  if (!items) return <div>Loading…</div>
-
   return (
-    <section className="space-y-6">
-      <h2 className="text-2xl font-bold">My Standards</h2>
-      <div className="bg-white border rounded-xl p-4 space-y-2">
-        {items.length ? items.map((it, i) => (
-          <label key={it.key || i} className="flex items-center gap-3 border rounded p-2">
-            <input type="checkbox" checked={!!it.done} onChange={()=>toggle(i)} />
-            <span>{it.label}</span>
-          </label>
-        )) : <p className="text-sm text-slate-600">No standards yet. A mentor can assign the master list.</p>}
-      </div>
-    </section>
+    <div className="p-4">
+      <h2 className="text-2xl font-bold mb-4">Fire Fit Standards</h2>
+
+      {/* Add attempt form */}
+      <form
+        onSubmit={handleAdd}
+        className="bg-white shadow p-4 rounded-md mb-6 space-y-3"
+      >
+        <div>
+          <label className="block font-medium">Tier</label>
+          <select
+            value={newAttempt.tier}
+            onChange={(e) =>
+              setNewAttempt((n) => ({ ...n, tier: e.target.value }))
+            }
+            className="border rounded px-2 py-1 w-full"
+          >
+            <option value="committed">Committed</option>
+            <option value="developmental">Developmental</option>
+            <option value="advanced">Advanced</option>
+            <option value="elite">Elite</option>
+          </select>
+        </div>
+        <div>
+          <label className="block font-medium">Standard</label>
+          <input
+            type="text"
+            value={newAttempt.standard}
+            onChange={(e) =>
+              setNewAttempt((n) => ({ ...n, standard: e.target.value }))
+            }
+            className="border rounded px-2 py-1 w-full"
+            placeholder="Deadlift, Mile Run, etc."
+          />
+        </div>
+        <div>
+          <label className="block font-medium">Result</label>
+          <input
+            type="text"
+            value={newAttempt.result}
+            onChange={(e) =>
+              setNewAttempt((n) => ({ ...n, result: e.target.value }))
+            }
+            className="border rounded px-2 py-1 w-full"
+            placeholder="225 × 3, 12:15, etc."
+          />
+        </div>
+        <button
+          type="submit"
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Log Attempt
+        </button>
+      </form>
+
+      {/* Attempts list */}
+      {loading && <p>Loading attempts…</p>}
+      {error && <p className="text-red-600">{error}</p>}
+
+      <ul className="space-y-2">
+        {attempts.map((a) => (
+          <li key={a.id} className="bg-white shadow rounded p-3">
+            <div className="flex justify-between">
+              <span className="font-medium">{a.standard}</span>
+              <span className="text-sm text-slate-500">
+                {a.tier || '—'}
+              </span>
+            </div>
+            <div>{a.result}</div>
+            <div className="text-xs text-slate-400">
+              {a.createdAt?.toDate?.().toLocaleString?.() || '—'}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
