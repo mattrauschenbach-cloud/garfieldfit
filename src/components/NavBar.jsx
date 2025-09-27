@@ -21,8 +21,6 @@ export default function NavBar() {
           {isMentor && (
             <>
               <Link to="/weekly-admin">Weekly Admin</Link>
-              <Link to="/mentor-standards">Mentor Standards</Link>
-              <Link to="/standards-import">Import Standards</Link>
               <Link to="/tier-checkoff">Tier Checkoff</Link>
             </>
           )}
