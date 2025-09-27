@@ -1,191 +1,201 @@
+// src/pages/WeeklyChallenge.jsx
 import { useEffect, useMemo, useState } from 'react'
-import { db } from '../lib/firebase'
-import { useAuthState } from '../lib/auth'
+import { auth, db } from '../lib/firebase'
 import {
-  doc, getDoc, setDoc,
-  collection, addDoc, onSnapshot, orderBy, deleteDoc, query
+  collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc
 } from 'firebase/firestore'
 
-const MAX_ENTRY = 50000
-const DEFAULT_META = {
-  title: 'Weekly Challenge',
-  details: 'Add your contribution for this week.',
-  goal: 25000,
-  unit: 'm',
-  total: 0
+/** Week id like "2025-W39" */
+function getWeekId(d = new Date()) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const dayNum = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1))
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`
 }
 
-export default function WeeklyChallenge(){
-  const { user, profile } = useAuthState()
-  const isMentor = profile?.role === 'mentor'
+export default function WeeklyChallenge() {
+  const [weekId] = useState(getWeekId())
+  const [myValue, setMyValue] = useState('')
+  const [myShift, setMyShift] = useState('A') // fallback; replace with profile?.shift if you pass it in
+  const [saving, setSaving] = useState(false)
 
-  const [meta, setMeta] = useState(null)
-  const [metaLoading, setMetaLoading] = useState(true)
-  const [metaError, setMetaError] = useState('')
+  const [entries, setEntries] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [meta, setMeta] = useState({ title: 'Weekly Challenge', details: '', target: null })
 
-  const [myLogs, setMyLogs] = useState([])
-  const [logsError, setLogsError] = useState('')
-  const [amount, setAmount] = useState('')
-
-  // Load meta/weekly safely
+  // Load meta (optional admin text at /meta/weekly)
   useEffect(() => {
-    let cancelled = false
-    ;(async () => {
+    (async () => {
       try {
-        setMetaError('')
-        setMetaLoading(true)
         const snap = await getDoc(doc(db, 'meta', 'weekly'))
-        if (!cancelled) {
-          if (snap.exists()) {
-            setMeta({ ...DEFAULT_META, ...snap.data() })
-          } else {
-            setMeta(DEFAULT_META) // show defaults; mentors can create it
-          }
-        }
-      } catch (err) {
-        console.error('Load weekly meta failed:', err)
-        if (!cancelled) {
-          setMeta(DEFAULT_META)
-          setMetaError(err?.message || 'Failed to load weekly settings.')
-        }
-      } finally {
-        if (!cancelled) setMetaLoading(false)
-      }
+        if (snap.exists()) setMeta({ ...meta, ...snap.data() })
+      } catch { /* ignore meta errors for UX */ }
     })()
-    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Live logs for this user
+  // Live subscribe to this week's entries
   useEffect(() => {
-    if (!user) return
-    setLogsError('')
+    setLoading(true)
+    const q = query(collection(db, 'weekly_logs', weekId, 'entries'), orderBy('value', 'desc'))
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      setEntries(list)
+      setLoading(false)
+      // hydrate "my" state if present
+      const me = auth.currentUser?.uid ? list.find(x => x.id === auth.currentUser.uid) : null
+      if (me) {
+        setMyValue(me.value ?? '')
+        if (me.shift) setMyShift(me.shift)
+      }
+    }, () => setLoading(false))
+    return () => unsub()
+  }, [weekId])
+
+  // Totals by shift
+  const totals = useMemo(() => {
+    const t = { A:0, B:0, C:0 }
+    for (const e of entries) {
+      const s = (e.shift || 'A').toUpperCase()
+      if (t[s] == null) t[s] = 0
+      t[s] += Number(e.value || 0)
+    }
+    return t
+  }, [entries])
+
+  const leaders = useMemo(() => entries.slice(0, 8), [entries])
+
+  // Submit/update my entry (doc id = uid)
+  async function save() {
+    const user = auth.currentUser
+    if (!user) return alert('Please sign in first.')
+    const val = Number(myValue)
+    if (Number.isNaN(val) || val < 0) return alert('Enter a valid number.')
+
+    setSaving(true)
     try {
-      const q = query(
-        collection(db, 'weekly_logs', user.uid, 'entries'),
-        orderBy('ts', 'desc')
-      )
-      const unsub = onSnapshot(q,
-        (snap) => {
-          setMyLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      await setDoc(
+        doc(db, 'weekly_logs', weekId, 'entries', user.uid),
+        {
+          ownerId: user.uid,           // REQUIRED by your rules
+          value: val,
+          shift: (myShift || 'A').toUpperCase(),
+          displayName: user.displayName || 'Firefighter',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         },
-        (err) => {
-          console.error('weekly_logs snapshot error:', err)
-          setLogsError(err?.message || 'Failed to load your entries.')
-        }
+        { merge: true }
       )
-      return () => unsub()
-    } catch (err) {
-      console.error('weekly_logs setup failed:', err)
-      setLogsError(err?.message || 'Failed to load your entries.')
-    }
-  }, [user])
-
-  const add = async (e) => {
-    e.preventDefault()
-    const num = Number(amount)
-    if (!num || num < 0 || num > MAX_ENTRY) return
-    try {
-      await addDoc(collection(db, 'weekly_logs', user.uid, 'entries'), {
-        uid: user.uid,
-        amount: num,
-        unit: meta?.unit || 'm',
-        ts: Date.now()
-      })
-      setAmount('')
-    } catch (err) {
-      alert('Could not add entry: ' + (err?.message || err))
+    } catch (e) {
+      console.error(e)
+      alert('Could not save. ' + (e.message || e.code))
+    } finally {
+      setSaving(false)
     }
   }
-
-  const remove = async (id) => {
-    if (!confirm('Delete this entry?')) return
-    try {
-      await deleteDoc(doc(db, 'weekly_logs', user.uid, 'entries', id))
-    } catch (err) {
-      alert('Could not delete: ' + (err?.message || err))
-    }
-  }
-
-  // Mentor: create default meta/weekly if missing
-  const createDefaultWeekly = async () => {
-    try {
-      await setDoc(doc(db, 'meta', 'weekly'), DEFAULT_META, { merge: true })
-      setMeta(DEFAULT_META)
-      setMetaError('')
-      alert('Weekly challenge created.')
-    } catch (err) {
-      alert('Could not create weekly challenge: ' + (err?.message || err))
-    }
-  }
-
-  const myTotal = useMemo(
-    () => myLogs.reduce((s, l) => s + (Number(l.amount) || 0), 0),
-    [myLogs]
-  )
-  const teamTotal = meta?.total || myTotal
-  const goal = meta?.goal || 0
-  const pct = goal ? Math.min(100, Math.round(teamTotal / goal * 100)) : 0
-
-  if (metaLoading) return <div className="p-6">Loading weekly challenge…</div>
 
   return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-bold">Weekly Challenge</h2>
+    <div className="vstack" style={{ gap: 12 }}>
+      {/* Header card */}
+      <div className="card pad vstack" style={{ gap: 10 }}>
+        <div className="title">{meta.title || 'Weekly Challenge'}</div>
+        <div className="sub">
+          Week <span className="mono">{weekId}</span>
+          {meta.target ? <> • Target: <strong>{meta.target}</strong></> : null}
+        </div>
+        {meta.details ? <div style={{ color:'#334155', fontSize:14 }}>{meta.details}</div> : null}
+      </div>
 
-      {/* Meta card */}
-      <div className="bg-white border rounded-xl p-4 space-y-2">
-        <div className="text-lg font-semibold">{meta?.title || DEFAULT_META.title}</div>
-        <div className="text-slate-700">{meta?.details || DEFAULT_META.details}</div>
-
-        {metaError && <div className="text-sm text-red-600">Note: {metaError}</div>}
-
-        <div className="mt-2">
-          <div className="text-sm text-slate-600">
-            Team progress: {teamTotal.toLocaleString()} / {goal.toLocaleString()} {meta?.unit || ''} ({pct}%)
+      {/* Submit card */}
+      <div className="card pad vstack" style={{ gap: 12 }}>
+        <div className="title">Log your total</div>
+        <div className="grid2">
+          <div>
+            <div className="label">Value</div>
+            <input
+              type="number"
+              inputMode="numeric"
+              placeholder="e.g. 120"
+              value={myValue}
+              onChange={(e)=>setMyValue(e.target.value)}
+            />
           </div>
-          <div className="w-full h-3 bg-slate-200 rounded">
-            <div className="h-3 bg-slate-900 rounded" style={{ width: pct + '%' }} />
+          <div>
+            <div className="label">Shift</div>
+            <select value={myShift} onChange={(e)=>setMyShift(e.target.value)}>
+              <option value="A">A Shift</option>
+              <option value="B">B Shift</option>
+              <option value="C">C Shift</option>
+            </select>
           </div>
         </div>
+        <button className="btn primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Submit'}
+        </button>
+        <div className="sub">You can update this any time—mentors can edit anyone.</div>
+      </div>
 
-        {isMentor && meta === DEFAULT_META && (
-          <button onClick={createDefaultWeekly} className="mt-2 px-3 py-2 rounded border">
-            Create default Weekly Challenge
-          </button>
+      {/* Totals card */}
+      <div className="card pad vstack" style={{ gap: 8 }}>
+        <div className="title">Shift totals</div>
+        <Row label="A Shift" value={totals.A} badge="A" />
+        <Row label="B Shift" value={totals.B} badge="B" />
+        <Row label="C Shift" value={totals.C} badge="C" />
+      </div>
+
+      {/* Leaders card */}
+      <div className="card pad vstack" style={{ gap: 10 }}>
+        <div className="title">Top entries</div>
+        {loading ? (
+          <div className="sub">Loading…</div>
+        ) : leaders.length === 0 ? (
+          <div className="sub">No entries yet. Be the first to log this week.</div>
+        ) : (
+          <div className="vstack" style={{ gap: 6 }}>
+            {leaders.map((e, i) => (
+              <LeaderRow
+                key={e.id}
+                rank={i+1}
+                name={e.displayName || 'Firefighter'}
+                shift={(e.shift || 'A').toUpperCase()}
+                value={Number(e.value || 0)}
+              />
+            ))}
+          </div>
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* Add entry */}
-      <form onSubmit={add} className="flex items-center gap-2">
-        <input
-          className="border rounded px-3 py-2 w-40"
-          type="number"
-          placeholder="Amount"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-        />
-        <button className="px-3 py-2 rounded bg-slate-900 text-white">Add my contribution</button>
-        <span className="text-sm text-slate-600">Max per entry: {MAX_ENTRY}</span>
-      </form>
-
-      {/* My entries */}
-      <div className="bg-white border rounded-xl p-4">
-        {logsError && <div className="text-sm text-red-600 mb-2">Logs error: {logsError}</div>}
-        <div className="font-semibold mb-2">
-          Your total this week: {myTotal.toLocaleString()} {meta?.unit || ''}
-        </div>
-        <ul className="space-y-1">
-          {myLogs.map(l => (
-            <li key={l.id} className="flex items-center justify-between border rounded px-3 py-2">
-              <span>{new Date(l.ts).toLocaleString()} — <b>{l.amount}</b> {l.unit}</span>
-              <button onClick={() => remove(l.id)} className="text-sm border rounded px-2 py-1">Delete</button>
-            </li>
-          ))}
-          {myLogs.length === 0 && (
-            <li className="text-sm text-slate-500">No entries yet.</li>
-          )}
-        </ul>
+function Row({ label, value, badge }) {
+  return (
+    <div className="hstack" style={{ justifyContent:'space-between' }}>
+      <div className="hstack" style={{ gap:8 }}>
+        <span className="badge shift">{badge}</span>
+        <div style={{ fontWeight:800 }}>{label}</div>
       </div>
-    </section>
+      <div className="title">{Number(value || 0)}</div>
+    </div>
+  )
+}
+
+function LeaderRow({ rank, name, shift, value }) {
+  return (
+    <div className="hstack" style={{
+      justifyContent:'space-between', padding:'8px 10px',
+      border:'1px solid #e5e7eb', borderRadius:12
+    }}>
+      <div className="hstack" style={{ gap:10 }}>
+        <div className="badge" style={{ background:'#f1f5f9', color:'#0f172a' }}>#{rank}</div>
+        <div>
+          <div style={{ fontWeight:800 }}>{name}</div>
+          <div className="sub">Shift {shift}</div>
+        </div>
+      </div>
+      <div className="title">{value}</div>
+    </div>
   )
 }
