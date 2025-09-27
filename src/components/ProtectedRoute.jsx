@@ -1,9 +1,18 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import { useAuthState } from '../lib/auth'
-export default function ProtectedRoute({ children }){
+
+export default function ProtectedRoute({ children }) {
   const { user, loading } = useAuthState()
-  const location = useLocation()
-  if (loading) return <div className="p-8">Loading...</div>
-  if (!user) return <Navigate to="/login" state={{ from: location }} replace/>
+
+  if (loading) return <div className="p-4">Auth loading…</div>
+  if (!user) {
+    return (
+      <div className="p-4">
+        <div className="mb-2 text-red-600 font-semibold">ProtectedRoute: no user</div>
+        <div className="text-sm mb-4">You must be signed in.</div>
+        <Navigate to="/login" replace />
+      </div>
+    )
+  }
   return children
 }
