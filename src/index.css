@@ -1,3 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Safe defaults if Tailwind isn't active */
 html, body, #root { height: 100%; }
 html, body { margin: 0; padding: 0; }
 * { box-sizing: border-box; }
+
+/* Small polish */
+.container-xx { @apply mx-auto w-full max-w-6xl px-4; }
+.card { @apply bg-white border border-slate-200 rounded-xl shadow-sm; }
+.btn { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium; }
+.btn-primary { @apply btn bg-slate-900 text-white hover:bg-slate-800; }
+.btn-ghost { @apply btn text-slate-700 hover:bg-slate-100; }
+.badge { @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold; }
+.badge-mentor { @apply badge bg-emerald-100 text-emerald-700; }
+.badge-admin { @apply badge bg-indigo-100 text-indigo-700; }
+.link { @apply text-blue-600 hover:underline; }
+
