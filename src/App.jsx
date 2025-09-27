@@ -55,8 +55,7 @@ export default function App() {
           <Route path="/weekly-admin" element={
             <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
           } />
-          <Route path="/mentor-standards" element={
-            <ProtectedRoute><MentorRoute><MentorStandards /></MentorRoute></ProtectedRoute>
+          
           } />
           <Route path="/standards-import" element={
             <ProtectedRoute><MentorRoute><StandardsImport /></MentorRoute></ProtectedRoute>
