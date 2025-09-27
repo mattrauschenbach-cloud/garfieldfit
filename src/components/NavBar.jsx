@@ -1,96 +1,46 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useAuthState } from '../lib/auth'
+import { Link, useLocation } from "react-router-dom"
+
+const tabs = [
+  { to: "/", label: "Home" },
+  { to: "/weekly", label: "Weekly" },
+  { to: "/monthly", label: "Monthly" },
+  { to: "/members", label: "Members" },
+  { to: "/leaderboard", label: "Leaderboard" },
+  { to: "/standards", label: "Standards" },
+  { to: "/weekly-admin", label: "Weekly Admin" },
+  { to: "/tier-checkoff", label: "Tier Checkoff" },
+  { to: "/diag", label: "Diag" },
+]
 
 export default function NavBar() {
-  const { user, profile, signOut } = useAuthState()
-  const isMentor = profile?.role === 'mentor'
-  const [open, setOpen] = useState(false)
-
+  const { pathname } = useLocation()
   return (
-    <header className="w-full bg-slate-900 text-white">
-      {/* Top bar */}
-      <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
-        {/* Brand */}
-        <Link to="/" className="font-bold text-lg whitespace-nowrap">
+    <header style={{ background:"#0f172a", color:"#fff", width:"100%" }}>
+      <div style={{
+        maxWidth: 1024, margin:"0 auto", padding:"12px 16px",
+        display:"flex", gap:12, flexWrap:"wrap", alignItems:"center"
+      }}>
+        <Link to="/" style={{ fontWeight:700, fontSize:18, whiteSpace:"nowrap" }}>
           Station 1 Fit
         </Link>
-
-        {/* Desktop nav */}
-        {user && (
-          <nav className="hidden md:flex items-center gap-4">
-            <Link to="/weekly" className="hover:opacity-80">Weekly</Link>
-            <Link to="/monthly" className="hover:opacity-80">Monthly</Link>
-            <Link to="/members" className="hover:opacity-80">Members</Link>
-            <Link to="/leaderboard" className="hover:opacity-80">Leaderboard</Link>
-            <Link to="/standards" className="hover:opacity-80">Standards</Link>
-            {isMentor && (
-              <>
-                <Link to="/weekly-admin" className="hover:opacity-80">Weekly Admin</Link>
-                <Link to="/tier-checkoff" className="hover:opacity-80">Tier Checkoff</Link>
-              </>
-            )}
-          </nav>
-        )}
-
-        {/* Right side */}
-        <div className="ml-auto flex items-center gap-3">
-          {/* Debug badge (optional) */}
-          {user && (
-            <div className="hidden sm:block text-xs bg-white/10 rounded px-2 py-1">
-              <div>role: <b>{profile?.role || '—'}</b></div>
-              <div>proj: {import.meta.env.VITE_FIREBASE_PROJECT_ID || '—'}</div>
-            </div>
-          )}
-
-          {!user ? (
-            <Link
-              to="/login"
-              className="bg-white text-slate-900 px-3 py-1 rounded hover:bg-slate-100"
-            >
-              Login
+        <nav style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+          {tabs.map(t => (
+            <Link key={t.to} to={t.to}
+              style={{
+                padding:"6px 10px", borderRadius:8,
+                background: pathname===t.to ? "rgba(255,255,255,.12)" : "transparent",
+                color:"#fff", textDecoration:"none"
+              }}>
+              {t.label}
             </Link>
-          ) : (
-            <button
-              onClick={() => signOut()}
-              className="bg-white text-slate-900 px-3 py-1 rounded hover:bg-slate-100"
-            >
-              Logout
-            </button>
-          )}
-
-          {/* Mobile menu button */}
-          {user && (
-            <button
-              onClick={() => setOpen(o => !o)}
-              className="md:hidden inline-flex items-center justify-center rounded border border-white/20 px-2 py-1"
-              aria-expanded={open}
-              aria-label="Toggle menu"
-            >
-              ☰
-            </button>
-          )}
+          ))}
+        </nav>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+          <Link to="/login" style={{ background:"#fff", color:"#0f172a", padding:"6px 10px", borderRadius:8, textDecoration:"none" }}>
+            Login
+          </Link>
         </div>
       </div>
-
-      {/* Mobile drawer (wraps under bar) */}
-      {user && open && (
-        <nav className="md:hidden border-t border-white/10">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex flex-col gap-2">
-            <Link onClick={()=>setOpen(false)} to="/weekly" className="py-1">Weekly</Link>
-            <Link onClick={()=>setOpen(false)} to="/monthly" className="py-1">Monthly</Link>
-            <Link onClick={()=>setOpen(false)} to="/members" className="py-1">Members</Link>
-            <Link onClick={()=>setOpen(false)} to="/leaderboard" className="py-1">Leaderboard</Link>
-            <Link onClick={()=>setOpen(false)} to="/standards" className="py-1">Standards</Link>
-            {isMentor && (
-              <>
-                <Link onClick={()=>setOpen(false)} to="/weekly-admin" className="py-1">Weekly Admin</Link>
-                <Link onClick={()=>setOpen(false)} to="/tier-checkoff" className="py-1">Tier Checkoff</Link>
-              </>
-            )}
-          </div>
-        </nav>
-      )}
     </header>
   )
 }
