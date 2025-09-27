@@ -18,7 +18,7 @@ import Leaderboard from './pages/Leaderboard.jsx'
 import Standards from './pages/Standards.jsx'
 import TierCheckoff from './pages/TierCheckoff.jsx'
 
-// Optional small utility pages
+// Optional utilities
 import Ping from './pages/Ping.jsx'
 import Diag from './pages/Diag.jsx'
 
@@ -51,7 +51,7 @@ export default function App() {
             <ProtectedRoute><Standards /></ProtectedRoute>
           } />
 
-          {/* Mentor-only tools */}
+          {/* Mentor-only */}
           <Route path="/weekly-admin" element={
             <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
           } />
@@ -59,7 +59,7 @@ export default function App() {
             <ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>
           } />
 
-          {/* Catch-all → Home */}
+          {/* 404 → Home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
