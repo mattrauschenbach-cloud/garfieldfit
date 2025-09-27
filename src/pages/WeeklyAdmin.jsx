@@ -1,54 +1,105 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/firebase'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { useAuthState } from '../lib/auth'
 
-function yearWeek(ts){
-  const d = new Date(ts); const jan1 = new Date(d.getFullYear(),0,1)
-  const week = Math.ceil((((d - jan1) / 86400000) + jan1.getDay()+1)/7)
-  return `${d.getFullYear()}-W${String(week).padStart(2,'0')}`
+const DEFAULT_WEEKLY = {
+  title: 'Weekly Challenge',
+  details: 'Describe this week’s challenge here.',
+  targetCompletions: 25,
 }
 
-export default function WeeklyAdmin(){
+export default function WeeklyAdmin() {
   const { profile } = useAuthState()
-  const [title,setTitle]=useState(''); const [details,setDetails]=useState('')
-  const [goal,setGoal]=useState(25000); const [unit,setUnit]=useState('m'); const [msg,setMsg]=useState('')
+  const isMentor = profile?.role === 'mentor'
+
+  const [meta, setMeta] = useState(DEFAULT_WEEKLY)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [weeklyTotal, setWeeklyTotal] = useState(0)
 
   useEffect(()=>{(async()=>{
-    const s=await getDoc(doc(db,'meta','weekly'))
-    if(s.exists()){const d=s.data();setTitle(d.title||'');setDetails(d.details||'');setGoal(d.goal||25000);setUnit(d.unit||'m')}
-  })()},[])
+    try{
+      setLoading(true)
+      const s = await getDoc(doc(db, 'meta', 'weekly'))
+      setMeta(s.exists() ? { ...DEFAULT_WEEKLY, ...s.data() } : DEFAULT_WEEKLY)
 
-  const save=async(e)=>{e.preventDefault();await setDoc(doc(db,'meta','weekly'),{title,details,goal:Number(goal)||0,unit},{merge:true});setMsg('Saved')}
+      // quick total from weekly_logs/{weekId}/entries
+      // If you already compute weekId elsewhere, replace 'current' with that value.
+      const entries = await getDocs(collection(db, 'weekly_logs', 'current', 'entries'))
+      setWeeklyTotal(entries.docs.length)
+    }catch(e){
+      setErr(e?.message || String(e))
+    }finally{
+      setLoading(false)
+    }
+  })()}, [])
 
-  const resetWeek = async () => {
-    if(!confirm('Archive current week and reset?')) return
-    const now = Date.now(), ww = yearWeek(now)
-    const curSnap = await getDoc(doc(db,'meta','weekly'))
-    const cur = curSnap.exists()? curSnap.data() : {}
-    await setDoc(doc(db,'weekly_history', ww), { ...cur, closedAt: now }, { merge:true })
-    await setDoc(doc(db,'meta','weekly'), { title: cur.title || 'Weekly Challenge', details: cur.details || '', goal: cur.goal || 0, unit: cur.unit || 'm', total: 0 }, { merge:true })
-    setMsg('Archived & reset')
+  const save = async () => {
+    setSaving(true)
+    try{
+      await setDoc(doc(db, 'meta', 'weekly'), {
+        title: (meta.title||'').trim() || DEFAULT_WEEKLY.title,
+        details: (meta.details||'').trim() || DEFAULT_WEEKLY.details,
+        targetCompletions: Number(meta.targetCompletions)||0
+      }, { merge:true })
+      alert('Weekly settings saved.')
+    }catch(e){
+      alert('Save failed: ' + (e?.message || e))
+    }finally{
+      setSaving(false)
+    }
   }
 
-  if (profile?.role !== 'mentor') return <p>Mentors only.</p>
+  if (!isMentor) return <div className="p-4">Mentor access only.</div>
+  if (loading) return <div className="p-4">Loading weekly admin…</div>
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 max-w-2xl">
       <h2 className="text-2xl font-bold">Weekly Admin</h2>
-      <form onSubmit={save} className="space-y-3 max-w-xl">
-        <input className="w-full border rounded px-3 py-2" placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)}/>
-        <textarea className="w-full border rounded px-3 py-2" rows="3" placeholder="Details" value={details} onChange={e=>setDetails(e.target.value)}/>
+      {err && <div className="text-sm text-red-600">Error: {err}</div>}
+
+      <div className="bg-white border rounded-xl p-4 space-y-3">
+        <div className="grid md:grid-cols-3 gap-2">
+          <label className="md:col-span-1 text-sm text-slate-600">Title</label>
+          <input
+            className="border rounded px-3 py-2 md:col-span-2"
+            value={meta.title}
+            onChange={e=>setMeta(m=>({...m, title:e.target.value}))}
+          />
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-2">
+          <label className="md:col-span-1 text-sm text-slate-600">Details</label>
+          <textarea
+            className="border rounded px-3 py-2 md:col-span-2 min-h-[120px]"
+            value={meta.details}
+            onChange={e=>setMeta(m=>({...m, details:e.target.value}))}
+          />
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-2">
+          <label className="md:col-span-1 text-sm text-slate-600">Target Completions</label>
+          <input
+            className="border rounded px-3 py-2 w-40"
+            type="number" min="0"
+            value={meta.targetCompletions}
+            onChange={e=>setMeta(m=>({...m, targetCompletions:e.target.value}))}
+          />
+        </div>
+
         <div className="flex gap-2">
-          <input className="border rounded px-3 py-2 w-40" placeholder="Goal" type="number" value={goal} onChange={e=>setGoal(e.target.value)}/>
-          <input className="border rounded px-3 py-2 w-24" placeholder="Unit" value={unit} onChange={e=>setUnit(e.target.value)}/>
+          <button onClick={save} disabled={saving} className="px-3 py-2 rounded bg-slate-900 text-white disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-2 rounded bg-slate-900 text-white">Save</button>
-          <button type="button" onClick={resetWeek} className="px-3 py-2 rounded border">Archive & Reset</button>
-          {msg && <span className="text-sm text-slate-600">{msg}</span>}
-        </div>
-      </form>
+      </div>
+
+      <div className="bg-white border rounded-xl p-4">
+        <div className="text-sm text-slate-600">This week total</div>
+        <div className="text-2xl font-bold">{weeklyTotal}</div>
+      </div>
     </section>
   )
 }
