@@ -16,11 +16,9 @@ import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
 import Members from './pages/Members.jsx'
 import Leaderboard from './pages/Leaderboard.jsx'
 import Standards from './pages/Standards.jsx'
-import MentorStandards from './pages/MentorStandards.jsx'
-import StandardsImport from './pages/StandardsImport.jsx'
 import TierCheckoff from './pages/TierCheckoff.jsx'
 
-// Optional utility pages (keep or remove these two lines if you want)
+// Optional small utility pages
 import Ping from './pages/Ping.jsx'
 import Diag from './pages/Diag.jsx'
 
@@ -57,17 +55,11 @@ export default function App() {
           <Route path="/weekly-admin" element={
             <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
           } />
-          <Route path="/mentor-standards" element={
-            <ProtectedRoute><MentorRoute><MentorStandards /></MentorRoute></ProtectedRoute>
-          } />
-          <Route path="/standards-import" element={
-            <ProtectedRoute><MentorRoute><StandardsImport /></MentorRoute></ProtectedRoute>
-          } />
           <Route path="/tier-checkoff" element={
             <ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>
           } />
 
-          {/* 404 → Home */}
+          {/* Catch-all → Home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
