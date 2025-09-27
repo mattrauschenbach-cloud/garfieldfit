@@ -9,9 +9,11 @@ export default function NavBar() {
     <nav className="bg-slate-900 text-white px-4 py-3">
       <div className="flex items-center gap-4">
         {/* Brand / Home */}
-        <Link to="/" className="font-bold text-lg">Station 1 Fit</Link>
+        <Link to="/" className="font-bold text-lg">
+          Station 1 Fit
+        </Link>
 
-        {/* Links for signed-in users */}
+        {/* Main links (only visible when signed in) */}
         {user && (
           <div className="flex gap-3">
             <Link to="/weekly">Weekly</Link>
@@ -20,6 +22,7 @@ export default function NavBar() {
             <Link to="/leaderboard">Leaderboard</Link>
             <Link to="/standards">Standards</Link>
 
+            {/* Mentor-only */}
             {isMentor && (
               <>
                 <Link to="/weekly-admin">Weekly Admin</Link>
@@ -29,7 +32,7 @@ export default function NavBar() {
           </div>
         )}
 
-        {/* Right side: Login/Logout */}
+        {/* Right side actions */}
         <div className="ml-auto flex gap-3 items-center">
           {!user ? (
             <Link
