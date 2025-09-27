@@ -1,8 +1,44 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import NavBar from './components/NavBar.jsx'
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+import MentorRoute from './components/MentorRoute.jsx'
+
+import Home from './pages/Home.jsx'
+import Login from './pages/Login.jsx'
+import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
+import WeeklyAdmin from './pages/WeeklyAdmin.jsx'
+import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
+import Members from './pages/Members.jsx'
+import Leaderboard from './pages/Leaderboard.jsx'
+import Standards from './pages/Standards.jsx'
+import TierCheckoff from './pages/TierCheckoff.jsx'
+
 export default function App() {
   return (
-    <div style={{padding: 24, fontFamily: 'system-ui, sans-serif'}}>
-      <h1>✅ App is alive</h1>
-      <p>If you can see this, React is rendering. The blank screen comes from one of the imported components or routes.</p>
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      <NavBar />
+      <main className="flex-1 max-w-6xl w-full mx-auto p-4">
+        <Routes>
+          {/* Public */}
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+
+          {/* Signed-in */}
+          <Route path="/weekly" element={<ProtectedRoute><WeeklyChallenge /></ProtectedRoute>} />
+          <Route path="/monthly" element={<ProtectedRoute><MonthlyChallenge /></ProtectedRoute>} />
+          <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
+          <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+          <Route path="/standards" element={<ProtectedRoute><Standards /></ProtectedRoute>} />
+
+          {/* Mentor-only */}
+          <Route path="/weekly-admin" element={<ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>} />
+          <Route path="/tier-checkoff" element={<ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>} />
+
+          {/* 404 → Home */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      <footer className="py-6 text-center text-sm text-slate-500">Station 1 Fit Garfield Heights</footer>
     </div>
   )
 }
