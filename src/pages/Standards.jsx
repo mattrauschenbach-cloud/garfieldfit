@@ -1,22 +1,3 @@
-// src/pages/Standards.jsx
-import { useEffect, useMemo, useState } from 'react'
-import { db } from '../lib/firebase'
-import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/
-export default function Standards() {
-  const [tier, setTier] = useState('committed')
-  
-  }, [])
-
-  const list = groups[tier] || []
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return list
-    return list.filter(s =>
-      (s.title || '').toLowerCase().includes(q) ||
-      (s.detail || '').toLowerCase().includes(q)
-    )
-  }, [list, search])
 
   return (
     <section className="stack" style={{ gap: 16 }}>
