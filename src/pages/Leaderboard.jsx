@@ -10,7 +10,6 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { Trophy, CheckCircle2, Clock, Sparkles, Shield, Users } from "lucide-react";
 
 /**
  * StandardsBoard.jsx — Polished / Cooler UI
@@ -172,11 +171,11 @@ export default function StandardsBoard() {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {title === 'Elite' ? (
-            <Trophy className="h-5 w-5 text-amber-500" />
+            <span className="inline-block">🏆</span>
           ) : title === 'Advanced' ? (
-            <Shield className="h-5 w-5 text-sky-500" />
+            <span className="inline-block">🛡️</span>
           ) : (
-            <Sparkles className="h-5 w-5 text-emerald-500" />
+            <span className="inline-block">✨</span>
           )}
           <h2 className="text-lg font-semibold">{title}</h2>
         </div>
@@ -202,7 +201,7 @@ export default function StandardsBoard() {
       <div className="group grid grid-cols-12 items-center gap-3 rounded-3xl border bg-white/70 p-4 shadow-sm backdrop-blur transition hover:shadow-md">
         <div className="col-span-5 md:col-span-4">
           <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-slate-400" />
+            <span className="inline-block">👥</span>
             <div className="font-semibold">{m.displayName || "Firefighter"}</div>
           </div>
           <div className="text-sm text-gray-500">Shift {m.shift || "-"}</div>
@@ -218,7 +217,7 @@ export default function StandardsBoard() {
             />
           </div>
           <div className="mt-1 text-xs text-gray-600 flex items-center gap-1">
-            {p.passed ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Clock className="h-3.5 w-3.5 text-sky-600" />}
+            {p.passed ? <span className="inline-block">✔️</span> : <span className="inline-block">⏱️</span>}
             {p.passed ? "Passed" : `${Math.round(pct)}% to tier`}
           </div>
         </div>
@@ -229,7 +228,7 @@ export default function StandardsBoard() {
               p.passed ? "bg-emerald-600/10 text-emerald-700" : "bg-amber-600/10 text-amber-700"
             )}
           >
-            {p.passed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+            {p.passed ? <span className="inline-block">✔️</span> : <span className="inline-block">⏱️</span>}
             {p.passed ? "Passed" : "In Progress"}
           </span>
         </div>
@@ -268,7 +267,7 @@ export default function StandardsBoard() {
           <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 backdrop-blur">
-                <Sparkles className="h-3.5 w-3.5" />
+                <span className="inline-block">✨</span>
                 {isEditor ? "Editing enabled (owner/mentor)" : "Read-only"}
               </div>
               <h1 className="mt-3 bg-gradient-to-br from-white to-white/70 bg-clip-text text-3xl font-extrabold text-transparent md:text-4xl">
@@ -301,7 +300,7 @@ export default function StandardsBoard() {
 
         {/* Circuit */}
         <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5 text-white/80 shadow-sm backdrop-blur">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><Shield className="h-4 w-4" />Circuit (from packet)</div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold"><span className="inline-block">🛡️</span>Circuit (from packet)</div>
           <div className="text-sm">{CIRCUIT.join(" • ")}</div>
         </div>
 
@@ -333,7 +332,7 @@ export default function StandardsBoard() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-white shadow-sm backdrop-blur">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                <span className="inline-block">✔️</span>
                 <h3 className="text-lg font-semibold">Passed</h3>
               </div>
               <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300">
@@ -360,7 +359,7 @@ export default function StandardsBoard() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-white shadow-sm backdrop-blur">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-300" />
+                <span className="inline-block">⏱️</span>
                 <h3 className="text-lg font-semibold">In Progress</h3>
               </div>
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200">
