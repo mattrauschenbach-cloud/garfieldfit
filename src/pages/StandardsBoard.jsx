@@ -1,261 +1,376 @@
-// src/pages/StandardsBoard.jsx
-import { useEffect, useMemo, useState } from 'react'
-import { db } from '../lib/firebase'
+import React, { useEffect, useMemo, useState } from "react";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import {
-  collection, collectionGroup, doc, getDoc, getDocs,
-  orderBy, query, where, limit
-} from 'firebase/firestore'
+  collection,
+  doc,
+  getDocs,
+  getFirestore,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 
-// Fallback catalog if /meta/standards is missing
-const DEFAULTS = {
-  committed: {
-    title: 'Committed',
-    items: [
-      { key: 'attendance', name: 'Attendance', target: 'All mandatory sessions' },
-      { key: 'hydration',  name: 'Hydration',  target: 'Meets daily target' },
-    ],
-  },
-  developmental: {
-    title: 'Developmental',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'1.5 × BW (min 225 × 3)' },
-      { key: 'bench', name:'Bench Press', target:'135 lb × 5' },
-      { key: 'backsquat', name:'Back Squat', target:'1.5 × BW (min 185 × 3)' },
-      { key: 'pullups', name:'Pull-Ups', target:'8 strict or 3 @15 lb' },
-      { key: 'pushups', name:'Push-Ups', target:'40 unbroken' },
-      { key: 'ohp', name:'Overhead Press', target:'95 lb × 3' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'2×100 lb for 150 ft' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'80 lb × 200 ft' },
-      { key: 'mile', name:'1 Mile Run', target:'< 9:30' },
-      { key: 'row500', name:'500m Row', target:'< 1:55' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'10 flights < 6:00' },
-      { key: 'burpees', name:'Burpees', target:'50 < 4:00' },
-      { key: 'wallballs', name:'Wall Balls', target:'50 unbroken @20 lb' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'8 min continuous' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Under 35 min' },
-    ],
-  },
-  advanced: {
-    title: 'Advanced',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'1.75 × BW (min 315 × 3)' },
-      { key: 'bench', name:'Bench Press', target:'185 lb × 5' },
-      { key: 'backsquat', name:'Back Squat', target:'1.75 × BW (min 275 × 3)' },
-      { key: 'pullups', name:'Pull-Ups', target:'15 strict or 5 @25 lb' },
-      { key: 'pushups', name:'Push-Ups', target:'60 unbroken' },
-      { key: 'ohp', name:'Overhead Press', target:'135 lb × 3' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'2×120 lb for 150 ft' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'100 lb × 200 ft' },
-      { key: 'mile', name:'1 Mile Run', target:'< 9:00' },
-      { key: 'row500', name:'500m Row', target:'< 1:40' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'10 flights < 5:00' },
-      { key: 'burpees', name:'Burpees', target:'50 < 3:30' },
-      { key: 'wallballs', name:'Wall Balls', target:'50 unbroken @30 lb' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'10 min continuous' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Under 30 min' },
-    ],
-  },
-  elite: {
-    title: 'Elite',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'Coach-defined' },
-      { key: 'bench', name:'Bench Press', target:'Coach-defined' },
-      { key: 'backsquat', name:'Back Squat', target:'Coach-defined' },
-      { key: 'pullups', name:'Pull-Ups', target:'Coach-defined' },
-      { key: 'pushups', name:'Push-Ups', target:'Coach-defined' },
-      { key: 'ohp', name:'Overhead Press', target:'Coach-defined' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'Coach-defined' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'Coach-defined' },
-      { key: 'mile', name:'1 Mile Run', target:'Coach-defined' },
-      { key: 'row500', name:'500m Row', target:'Coach-defined' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'Coach-defined' },
-      { key: 'burpees', name:'Burpees', target:'Coach-defined' },
-      { key: 'wallballs', name:'Wall Balls', target:'Coach-defined' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'Coach-defined' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Coach-defined' },
-    ],
-  },
+/**
+ * StandardsBoard.jsx — FULL COPY, FIXED
+ * - Compiles with Vite + React
+ * - Uses Firebase v9 modular SDK
+ * - Renders all standards (Developmental / Advanced / Elite)
+ * - Shows member progress; only owner can edit
+ * - Includes a Passed vs In-Progress board with the fixed if/else braces
+ *
+ * 📌 Setup expected:
+ *   - You have Firebase initialized somewhere in your app
+ *   - If you already export `auth` and `db` from a file like `src/lib/firebase.js`,
+ *     you can replace the getAuth()/getFirestore() calls with your imports.
+ */
+
+// ---- CONFIGURE OWNER ACCESS ----------------------------------------------
+// Add your owner emails here. Only these users will be able to edit standards
+const OWNER_EMAILS = [
+  "mrauschenbach@rocketmail.com", // Matt
+];
+
+// ---- STATIC STANDARDS DATA (edit as needed) -------------------------------
+const STANDARDS = {
+  Developmental: [
+    { id: "dev-1.5mi", label: "1.5 Mile Run ≤ 13:15" },
+    { id: "dev-pushups", label: "Push-ups (max in 2 min)" },
+    { id: "dev-situps", label: "Sit-ups (max in 2 min)" },
+    { id: "dev-plank", label: "Plank Hold (min)" },
+  ],
+  Advanced: [
+    { id: "adv-1.5mi", label: "1.5 Mile Run ≤ 12:00" },
+    { id: "adv-pushups", label: "Push-ups (higher tier)" },
+    { id: "adv-sleddrag", label: "Hose/Sled Drag for time" },
+  ],
+  Elite: [
+    { id: "elite-1.5mi", label: "1.5 Mile Run ≤ 10:30" },
+    { id: "elite-circuit", label: "Full Circuit (see packet)" },
+    { id: "elite-stairclimb", label: "Stair Climb loaded for time" },
+  ],
+};
+
+// Optionally show circuit definition somewhere in UI
+const CIRCUIT = [
+  "100 Push-ups",
+  "100 Air Squats",
+  "50 Burpees",
+  "50 Sit-ups",
+  "25 Lunges each leg",
+  "25 Pull-ups",
+];
+
+// ---- TYPES ----------------------------------------------------------------
+/** Member document shape expected from Firestore:
+ *  members/{memberId} => { displayName: string, shift: string }
+ *
+ * Progress document shape expected from Firestore:
+ *  progress/{memberId} => { pct: number (0-100), passed: boolean }
+ *
+ * You can adapt these collection names in the QUERIES section below.
+ */
+
+// ---- UTIL -----------------------------------------------------------------
+function classNames(...xs) {
+  return xs.filter(Boolean).join(" ");
 }
 
-// Return latest attempt per tier::key from a list
-function indexLatest(list) {
-  const map = new Map()
-  for (const a of list) {
-    const k = `${a.tier}::${a.key}`
-    const prev = map.get(k)
-    if (!prev) { map.set(k, a); continue }
-    const t1 = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0
-    const t2 = prev.updatedAt?.toMillis?.() || prev.createdAt?.toMillis?.() || 0
-    if (t1 >= t2) map.set(k, a)
-  }
-  return map
-}
-
+// ---- MAIN COMPONENT -------------------------------------------------------
 export default function StandardsBoard() {
-  const [catalog, setCatalog] = useState(DEFAULTS)
-  const [members, setMembers] = useState([])
-  const [progress, setProgress] = useState({}) // uid -> { tierKey: { pct, passed, total, passedCount } }
-  const [loading, setLoading] = useState(true)
+  const [db] = useState(() => getFirestore());
+  const [auth] = useState(() => getAuth());
 
-  // Load catalog
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState([]); // [{id, displayName, shift}]
+  const [progress, setProgress] = useState({}); // { memberId: { pct, passed } }
+  const [savingId, setSavingId] = useState(null);
+
+  // Auth state
   useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsub();
+  }, [auth]);
+
+  const isOwner = useMemo(() => {
+    const email = user?.email?.toLowerCase?.();
+    return email ? OWNER_EMAILS.map((e) => e.toLowerCase()).includes(email) : false;
+  }, [user]);
+
+  // ---- QUERIES: load members & progress ----------------------------------
+  useEffect(() => {
+    let mounted = true;
     (async () => {
+      setLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'meta', 'standards'))
-        if (snap.exists() && snap.data()?.tiers) {
-          setCatalog(snap.data().tiers)
+        // members collection
+        const membersSnap = await getDocs(query(collection(db, "members"), orderBy("displayName")));
+        const ms = [];
+        membersSnap.forEach((d) => {
+          const data = d.data();
+          ms.push({ id: d.id, displayName: data.displayName || "Firefighter", shift: data.shift || "" });
+        });
+
+        // progress collection
+        const progressSnap = await getDocs(collection(db, "progress"));
+        const map = {};
+        progressSnap.forEach((d) => {
+          const data = d.data();
+          map[d.id] = {
+            pct: typeof data.pct === "number" ? data.pct : 0,
+            passed: !!data.passed,
+          };
+        });
+
+        if (mounted) {
+          setMembers(ms);
+          setProgress(map);
         }
-      } catch {/* ignore; use defaults */}
-    })()
-  }, [])
-
-  // Load all members
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'profiles'))
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data(), displayName: d.data().displayName || 'Firefighter' }))
-        list.sort((a,b) => (a.displayName||'').localeCompare(b.displayName||''))
-        setMembers(list)
       } catch (e) {
-        console.error(e)
+        console.error(e);
+      } finally {
+        if (mounted) setLoading(false);
       }
-    })()
-  }, [])
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [db]);
 
-  // Compute per-member progress by fetching their attempts (via collectionGroup by userId)
-  useEffect(() => {
-    (async () => {
-      if (members.length === 0) { setLoading(false); return }
-      setLoading(true)
-      const out = {}
+  // ---- DERIVED: boards (Passed vs In-Progress) ----------------------------
+  const boards = useMemo(() => {
+    const passed = [];
+    const inprog = [];
 
-      // Fetch attempts per member (keeps reads reasonable)
-      await Promise.all(members.map(async (m) => {
-        try {
-          const qy = query(
-            collectionGroup(db, 'standard_attempts'),
-            where('userId', '==', m.id),
-            orderBy('createdAt', 'desc'),
-            limit(300)
-          )
-          const snap = await getDocs(qy)
-          const list = snap.docs.map(d => d.data())
-          const latest = indexLatest(list)
-
-          const tiersProg = {}
-          for (const [tierKey, tier] of Object.entries(catalog)) {
-            const total = tier.items.length || 1
-            let passedCount = 0
-            for (const it of tier.items) {
-              const k = `${tierKey}::${it.key}`
-              const last = latest.get(k)
-              if (last?.passed) passedCount += 1
-            }
-            const pct = Math.round((passedCount / total) * 100)
-            tiersProg[tierKey] = {
-              pct,
-              passed: passedCount === total && total > 0,
-              total,
-              passedCount,
-            }
-          }
-          out[m.id] = tiersProg
-        } catch (e) {
-          console.error('attempts fetch failed for', m.id, e)
-          out[m.id] = {}
-        }
-      }))
-
-      setProgress(out)
-      setLoading(false)
-    })()
-  }, [members, catalog])
-
-  // Build view model per tier
-  const byTier = useMemo(() => {
-    const map = {}
-    for (const [tierKey, tier] of Object.entries(catalog)) {
-      const passed = []
-      const inprog = []
-      for (const m of members) {
-        const p = progress[m.id]?.[tierKey]
-        if (!p) continue
-        const row = { id: m.id, name: m.displayName || 'Firefighter', shift: m.shift || '', pct: p.pct }
-        if (p.passed) passed.push(row) else inprog.push(row)
+    for (const m of members) {
+      const p = progress[m.id];
+      if (!p) continue;
+      const row = {
+        id: m.id,
+        name: m.displayName || "Firefighter",
+        shift: m.shift || "",
+        pct: p.pct,
+      };
+      // ✅ FIXED: braces around if/else
+      if (p.passed) {
+        passed.push(row);
+      } else {
+        inprog.push(row);
       }
-      // sort: passed alpha, in-progress by pct desc
-      passed.sort((a,b) => (a.name||'').localeCompare(b.name||''))
-      inprog.sort((a,b) => b.pct - a.pct || (a.name||'').localeCompare(b.name||''))
-      map[tierKey] = { title: tier.title, passed, inprog }
     }
-    return map
-  }, [catalog, members, progress])
+
+    passed.sort((a, b) => a.name.localeCompare(b.name));
+    inprog.sort((a, b) => b.pct - a.pct || a.name.localeCompare(b.name));
+
+    return { passed, inprog };
+  }, [members, progress]);
+
+  // ---- ACTIONS: owner can update progress --------------------------------
+  const updateMemberProgress = async (memberId, data) => {
+    try {
+      setSavingId(memberId);
+      const ref = doc(db, "progress", memberId);
+      // ensure doc exists, then update
+      await setDoc(ref, { pct: 0, passed: false }, { merge: true });
+      await updateDoc(ref, data);
+      setProgress((prev) => ({ ...prev, [memberId]: { ...prev[memberId], ...data } }));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save. Check console for details.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // ---- UI HELPERS ---------------------------------------------------------
+  const MemberRow = ({ m }) => {
+    const p = progress[m.id] || { pct: 0, passed: false };
+
+    return (
+      <div className="grid grid-cols-12 items-center gap-3 rounded-2xl border p-3 md:p-4 shadow-sm">
+        <div className="col-span-5 md:col-span-4">
+          <div className="font-semibold">{m.displayName || "Firefighter"}</div>
+          <div className="text-sm text-gray-500">Shift {m.shift || "-"}</div>
+        </div>
+        <div className="col-span-4 md:col-span-5">
+          <div className="h-2 w-full rounded bg-gray-200">
+            <div
+              className="h-2 rounded bg-emerald-500"
+              style={{ width: `${Math.max(0, Math.min(100, p.pct))}%` }}
+            />
+          </div>
+          <div className="mt-1 text-xs text-gray-600">{Math.round(p.pct)}% to tier</div>
+        </div>
+        <div className="col-span-3 md:col-span-3 flex items-center justify-end gap-2">
+          <span
+            className={classNames(
+              "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
+              p.passed ? "bg-emerald-600/10 text-emerald-700" : "bg-amber-600/10 text-amber-700"
+            )}
+          >
+            {p.passed ? "Passed" : "In Progress"}
+          </span>
+        </div>
+        {isOwner && (
+          <div className="col-span-12 mt-3 grid grid-cols-12 items-center gap-3">
+            <div className="col-span-8 md:col-span-9">
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={p.pct}
+                onChange={(e) => updateMemberProgress(m.id, { pct: Number(e.target.value) })}
+                className="w-full"
+              />
+            </div>
+            <label className="col-span-4 md:col-span-3 flex items-center justify-end gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!p.passed}
+                onChange={(e) => updateMemberProgress(m.id, { passed: e.target.checked })}
+              />
+              <span>Mark Passed</span>
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="vstack" style={{ gap:12 }}>
-      <div className="card pad vstack" style={{ gap:8 }}>
-        <div className="title">Standards Status</div>
-        <div className="sub">Who has passed each tier, and who’s closest.</div>
+    <div className="mx-auto max-w-7xl px-4 py-6 md:py-10">
+      {/* Header */}
+      <div className="mb-6 flex flex-col items-start justify-between gap-3 md:mb-10 md:flex-row md:items-center">
+        <div>
+          <h1 className="text-2xl font-bold md:text-3xl">Standards Board</h1>
+          <p className="mt-1 text-gray-600">
+            View all tiers, track member progress, and see who has passed. {" "}
+            {isOwner ? (
+              <span className="font-medium text-emerald-700">Owner editing enabled.</span>
+            ) : (
+              <span className="font-medium text-gray-700">Read-only mode.</span>
+            )}
+          </p>
+        </div>
+        {savingId && (
+          <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-4 py-1 text-sm text-amber-800">
+            Saving…
+          </div>
+        )}
       </div>
 
-      {loading ? (
-        <div className="card pad">Building board…</div>
-      ) : (
-        Object.entries(byTier).map(([tierKey, data]) => (
-          <div key={tierKey} className="card pad vstack" style={{ gap:10 }}>
-            <div className="title">{data.title}</div>
-
-            {/* Passed */}
-            <div className="vstack" style={{ gap:8 }}>
-              <div className="label">Passed</div>
-              {data.passed.length === 0 ? (
-                <div className="sub">No one yet.</div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {data.passed.map(p => (
-                    <span key={p.id} className="badge" style={{ background:'#dcfce7', color:'#166534' }}>
-                      {p.name}{p.shift ? ` (${p.shift})` : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
+      {/* Standards Panels */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        {Object.entries(STANDARDS).map(([tier, items]) => (
+          <div key={tier} className="rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{tier}</h2>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                {items.length} items
+              </span>
             </div>
-
-            {/* In progress */}
-            <div className="vstack" style={{ gap:8 }}>
-              <div className="label">In progress</div>
-              {data.inprog.length === 0 ? (
-                <div className="sub">—</div>
-              ) : (
-                <div className="vstack" style={{ gap:6 }}>
-                  {data.inprog.map(p => (
-                    <div key={p.id} className="hstack" style={{
-                      justifyContent:'space-between',
-                      padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:12
-                    }}>
-                      <div>
-                        <div style={{ fontWeight:800 }}>{p.name}</div>
-                        <div className="sub">{p.shift ? `Shift ${p.shift}` : ''}</div>
-                      </div>
-                      <div className="hstack" style={{ gap:8, alignItems:'center' }}>
-                        <div className="sub">{p.pct}%</div>
-                        <div style={{
-                          width:96, height:8, borderRadius:9999, background:'#e5e7eb', overflow:'hidden'
-                        }}>
-                          <div style={{
-                            width:`${p.pct}%`, height:'100%', background:'#60a5fa'
-                          }} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ul className="space-y-2">
+              {items.map((it) => (
+                <li key={it.id} className="flex items-start gap-2">
+                  <span className="mt-1 inline-block h-2 w-2 rounded-full bg-slate-400" />
+                  <span className="text-sm text-slate-800">{it.label}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-        ))
-      )}
+        ))}
+      </div>
+
+      {/* Circuit callout */}
+      <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="mb-2 text-sm font-semibold text-slate-700">Circuit (from packet)</div>
+        <div className="text-sm text-slate-700">
+          {CIRCUIT.join(" • ")}
+        </div>
+      </div>
+
+      {/* Members Progress */}
+      <div className="mt-10">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Members</h2>
+          <div className="text-sm text-slate-500">{members.length} total</div>
+        </div>
+        {loading ? (
+          <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600 shadow-sm">
+            Loading members…
+          </div>
+        ) : members.length === 0 ? (
+          <div className="rounded-2xl border bg-white p-6 text-sm text-slate-600 shadow-sm">
+            No members found. Add users to the <code>members</code> collection.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {members.map((m) => (
+              <MemberRow key={m.id} m={m} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Status Boards */}
+      <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Passed</h3>
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+              {boards.passed.length}
+            </span>
+          </div>
+          {boards.passed.length === 0 ? (
+            <div className="text-sm text-slate-600">No one has passed yet.</div>
+          ) : (
+            <ul className="space-y-2">
+              {boards.passed.map((r) => (
+                <li key={r.id} className="flex items-center justify-between rounded-xl border p-3">
+                  <div>
+                    <div className="text-sm font-medium">{r.name}</div>
+                    <div className="text-xs text-slate-500">Shift {r.shift || "-"}</div>
+                  </div>
+                  <span className="text-xs text-slate-600">{Math.round(r.pct)}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">In Progress</h3>
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+              {boards.inprog.length}
+            </span>
+          </div>
+          {boards.inprog.length === 0 ? (
+            <div className="text-sm text-slate-600">No active attempts.</div>
+          ) : (
+            <ul className="space-y-2">
+              {boards.inprog.map((r) => (
+                <li key={r.id} className="flex items-center justify-between rounded-xl border p-3">
+                  <div>
+                    <div className="text-sm font-medium">{r.name}</div>
+                    <div className="text-xs text-slate-500">Shift {r.shift || "-"}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-600">{Math.round(r.pct)}%</div>
+                    <div className="text-[10px] text-slate-500">to tier</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Footer note */}
+      <div className="mt-10 text-center text-xs text-slate-500">
+        Standards Board · Garfield Heights · Last updated {new Date().toLocaleDateString()}
+      </div>
     </div>
-  )
+  );
 }
