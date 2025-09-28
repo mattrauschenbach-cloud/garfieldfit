@@ -20,6 +20,7 @@ import TierCheckoff from './pages/TierCheckoff.jsx'
 import Diag from './pages/Diag.jsx'
 import PermTest from './pages/PermTest.jsx'
 import Ping from './pages/Ping.jsx'
+import StandardsBoard from './pages/StandardsBoard.jsx'
 
 // ------------------------------------------------------------------
 // Lightweight guards embedded here so you don't need extra files.
@@ -108,7 +109,8 @@ export default function App() {
           <Route path="/standards-import" element={<ProtectedRoute><StandardsImport /></ProtectedRoute>} />
           <Route path="/diag" element={<ProtectedRoute><Diag /></ProtectedRoute>} />
           <Route path="/permtest" element={<ProtectedRoute><PermTest /></ProtectedRoute>} />
-
+          <Route path="/standards-board" element={<ProtectedRoute><StandardsBoard /></ProtectedRoute>} />
+         
           {/* Mentor/Admin-only */}
           <Route path="/weekly-admin" element={
             <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
