@@ -111,11 +111,6 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px var(--ring)}
   .grid3{grid-template-columns:1fr 1fr 1fr}
 }
 
-/* Hide the mobile tabbar on larger screens */
-@media (min-width: 768px){
-  .app-tabbar{display:none}
-}
-
 /* Top header spacing on wide screens */
 @media (min-width: 1024px){
   .app-header{height:64px}
