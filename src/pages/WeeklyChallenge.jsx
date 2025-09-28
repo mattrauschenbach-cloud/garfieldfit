@@ -1,8 +1,9 @@
-// src/pages/WeeklyChallenge.jsx (refined)
+// src/pages/WeeklyChallenge.jsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { auth, db } from '../lib/firebase'
 import {
-  collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc
+  addDoc, collection, deleteDoc, doc, getDoc,
+  onSnapshot, orderBy, query, serverTimestamp
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 
@@ -11,42 +12,57 @@ function getWeekId(d = new Date()) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const dayNum = date.getUTCDay() || 7
   date.setUTCDate(date.getUTCDate() + 4 - dayNum)
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1))
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
   const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7)
-  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
+}
+
+function fmt(ts) {
+  // Handles Firestore Timestamp, Date, or missing
+  try {
+    if (!ts) return ''
+    const dt = ts.toDate ? ts.toDate() : (ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts))
+    return dt.toLocaleString()
+  } catch {
+    return ''
+  }
 }
 
 export default function WeeklyChallenge() {
   const [weekId, setWeekId] = useState(getWeekId())
-  const [myValue, setMyValue] = useState('')
-  const [myShift, setMyShift] = useState('A')
-  const [saving, setSaving] = useState(false)
   const [user, setUser] = useState(null)
+  const [role, setRole] = useState('member')
+  const isMentor = role === 'mentor' || role === 'admin'
 
-  const [entries, setEntries] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [myShift, setMyShift] = useState('A')
+  const [myValue, setMyValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
   const [meta, setMeta] = useState({ title: 'Weekly Challenge', details: '', target: null })
 
-  // Bind auth + grab profile shift for better defaults
+  // Leaderboard (coalesced per user) + recent raw logs
+  const [entries, setEntries] = useState([])   // [{uid,name,shift,total,logs}]
+  const [recent, setRecent] = useState([])     // last 25 raw logs
+  const [loading, setLoading] = useState(true)
+
+  // Auth + profile (for shift default + role)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-      if (u?.uid) {
-        try {
-          const ps = await getDoc(doc(db, 'profiles', u.uid))
-          const prof = ps.exists() ? ps.data() : null
-          if (prof?.shift && ['A','B','C'].includes(prof.shift)) {
-            setMyShift(prof.shift)
-          }
-        } catch (e) {
-          console.warn('Profile fetch failed', e)
-        }
+      if (!u?.uid) { setRole('member'); return }
+      try {
+        const ps = await getDoc(doc(db, 'profiles', u.uid))
+        const prof = ps.exists() ? ps.data() : null
+        if (prof?.shift && ['A','B','C'].includes(prof.shift)) setMyShift(prof.shift)
+        setRole(prof?.role || 'member')
+      } catch {
+        setRole('member')
       }
     })
     return () => unsub()
   }, [])
 
-  // meta: weekly config (title/details/target) from meta/weekly_{weekId} or meta/weekly
+  // Meta (weekly_<id> or fallback weekly)
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'meta', `weekly_${weekId}`), (snap) => {
       if (snap.exists()) {
@@ -61,63 +77,69 @@ export default function WeeklyChallenge() {
     return () => unsub()
   }, [weekId])
 
-  // live entries from weekly_logs/{weekId}/entries
+  // READ logs: multiple docs per user allowed; sum for leaderboard + keep recent
   useEffect(() => {
     setLoading(true)
     const col = collection(db, 'weekly_logs', weekId, 'entries')
     const q = query(col, orderBy('updatedAt', 'desc'))
     const unsub = onSnapshot(q, (snap) => {
-      const rows = []
-      snap.forEach((d) => rows.push({ id: d.id, ...d.data() }))
-      // Coalesce by user; sum values for the week
+      const raw = []
+      snap.forEach((d) => raw.push({ id: d.id, ...d.data() }))
+
+      // Recent list (last 25 items as-is)
+      const latest = raw.slice(0, 25)
+
+      // Coalesce sums per user for leaderboard
       const byUser = new Map()
-      for (const r of rows) {
+      for (const r of raw) {
         const uid = r.uid || r.userId || r.id
         if (!uid) continue
-        const value = Number(r.value || r.amount || 0)
+        const inc = Number(r.value ?? r.amount ?? 0)
         const name = r.displayName || r.name || 'Member'
         const shift = r.shift || 'A'
-        if (!byUser.has(uid)) {
-          byUser.set(uid, { uid, name, shift, total: 0, last: 0 })
-        }
+        if (!byUser.has(uid)) byUser.set(uid, { uid, name, shift, total: 0, logs: 0 })
         const cur = byUser.get(uid)
-        cur.total += value
-        cur.last = value
+        cur.total += Number.isFinite(inc) ? inc : 0
+        cur.logs += 1
       }
       const list = Array.from(byUser.values())
       list.sort((a, b) => (b.total || 0) - (a.total || 0))
+
       setEntries(list)
+      setRecent(latest)
       setLoading(false)
     })
     return () => unsub()
   }, [weekId])
 
+  // KPIs
   const kpis = useMemo(() => {
     const participants = entries.length
-    const shiftA = entries.filter(e => (e.shift||'A') === 'A').reduce((s, r) => s + (r.total||0), 0)
-    const shiftB = entries.filter(e => (e.shift||'A') === 'B').reduce((s, r) => s + (r.total||0), 0)
-    const shiftC = entries.filter(e => (e.shift||'A') === 'C').reduce((s, r) => s + (r.total||0), 0)
+    const shiftA = entries.filter(e => (e.shift || 'A') === 'A').reduce((s, r) => s + (r.total || 0), 0)
+    const shiftB = entries.filter(e => (e.shift || 'A') === 'B').reduce((s, r) => s + (r.total || 0), 0)
+    const shiftC = entries.filter(e => (e.shift || 'A') === 'C').reduce((s, r) => s + (r.total || 0), 0)
     const grand = shiftA + shiftB + shiftC
-    return { participants, shiftA, shiftB, shiftC, grand }
+    const logs = entries.reduce((n, r) => n + (r.logs || 0), 0)
+    return { participants, shiftA, shiftB, shiftC, grand, logs }
   }, [entries])
 
   const leaders = useMemo(() => entries.slice(0, 10), [entries])
 
-  const save = useCallback(async () => {
+  // WRITE: add a new log (auto-ID)
+  const addLog = useCallback(async () => {
     if (!user) return alert('Please sign in first.')
     const val = Number(myValue)
-    if (!Number.isFinite(val) || val < 0) return alert('Enter a valid non-negative number.')
+    if (!Number.isFinite(val) || val <= 0) return alert('Enter a positive number.')
 
     setSaving(true)
     try {
-      const ref = doc(db, 'weekly_logs', weekId, 'entries', user.uid)
-      await setDoc(ref, {
+      await addDoc(collection(db, 'weekly_logs', weekId, 'entries'), {
         uid: user.uid,
         displayName: user.displayName || 'Member',
         shift: myShift || 'A',
         value: val,
         updatedAt: serverTimestamp(),
-      }, { merge: true })
+      })
       setMyValue('')
     } catch (e) {
       console.error(e)
@@ -127,21 +149,17 @@ export default function WeeklyChallenge() {
     }
   }, [user, myValue, myShift, weekId])
 
-  const exportCSV = useCallback(() => {
-    const headers = ['rank','name','shift','total']
-    const rows = entries
-      .map((r, i) => [String(i+1), r.name, r.shift || 'A', String(r.total || 0)])
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `weekly_${weekId}_leaderboard.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, [entries, weekId])
+  // Mentor-only delete a single log
+  const deleteLog = useCallback(async (logId) => {
+    if (!isMentor) return
+    if (!confirm('Delete this log entry?')) return
+    try {
+      await deleteDoc(doc(db, 'weekly_logs', weekId, 'entries', logId))
+    } catch (e) {
+      console.error(e)
+      alert('Delete failed. Check permissions (mentor-only) and network.')
+    }
+  }, [isMentor, weekId])
 
   return (
     <section className="stack" style={{ gap: 16 }}>
@@ -168,11 +186,7 @@ export default function WeeklyChallenge() {
         <div className="grid3" style={{ gap: 12 }}>
           <div>
             <label className="label">My Shift</label>
-            <select
-              className="input"
-              value={myShift}
-              onChange={e => setMyShift(e.target.value)}
-            >
+            <select className="input" value={myShift} onChange={e => setMyShift(e.target.value)}>
               <option value="A">A Shift</option>
               <option value="B">B Shift</option>
               <option value="C">C Shift</option>
@@ -180,7 +194,7 @@ export default function WeeklyChallenge() {
           </div>
 
           <div>
-            <label className="label">My Contribution</label>
+            <label className="label">Add to My Total</label>
             <input
               className="input"
               inputMode="numeric"
@@ -191,16 +205,12 @@ export default function WeeklyChallenge() {
           </div>
 
           <div className="row" style={{ alignItems:'flex-end' }}>
-            <button className="btn" disabled={saving} onClick={save}>
-              {saving ? 'Saving…' : 'Submit Total'}
+            <button className="btn" disabled={saving} onClick={addLog}>
+              {saving ? 'Saving…' : 'Add Log'}
             </button>
           </div>
         </div>
-        {!user && (
-          <div className="muted" style={{ marginTop: 8 }}>
-            Sign in to submit your weekly total.
-          </div>
-        )}
+        {!user && <div className="muted" style={{ marginTop: 8 }}>Sign in to submit your weekly logs.</div>}
       </div>
 
       {/* KPIs */}
@@ -208,6 +218,7 @@ export default function WeeklyChallenge() {
         <div className="card pad">
           <div className="eyebrow">Total Logged</div>
           <div className="title">{kpis.grand}</div>
+          <div className="sub">{kpis.logs} logs this week</div>
         </div>
         <div className="card pad">
           <div className="eyebrow">Shift Totals</div>
@@ -228,7 +239,6 @@ export default function WeeklyChallenge() {
         <div className="row between center">
           <h2 className="title">Weekly Leaderboard</h2>
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn ghost" onClick={exportCSV}>Export CSV</button>
             <div className="row center" style={{ gap: 8 }}>
               <label className="label" style={{ margin: 0 }}>View Week</label>
               <input
@@ -242,17 +252,43 @@ export default function WeeklyChallenge() {
 
         {loading ? (
           <div className="muted pad">Loading…</div>
-        ) : leaders.length === 0 ? (
+        ) : entries.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="stack" style={{ gap: 8, marginTop: 8 }}>
             {leaders.map((r, i) => (
               <Row
-                key={r.uid || r.id}
+                key={r.uid}
                 rank={i + 1}
                 name={r.name}
                 shift={r.shift || 'A'}
                 value={r.total ?? 0}
+                logs={r.logs || 0}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Recent Logs (last 25) */}
+      <div className="card" style={{ padding: 16 }}>
+        <div className="row between center">
+          <h2 className="title">Recent Logs</h2>
+          <div className="sub">{recent.length} shown • newest first</div>
+        </div>
+
+        {loading ? (
+          <div className="muted pad">Loading…</div>
+        ) : recent.length === 0 ? (
+          <div className="muted pad">No logs yet this week.</div>
+        ) : (
+          <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+            {recent.map((r) => (
+              <RecentRow
+                key={r.id}
+                log={r}
+                canDelete={isMentor}
+                onDelete={() => deleteLog(r.id)}
               />
             ))}
           </div>
@@ -264,7 +300,7 @@ export default function WeeklyChallenge() {
   )
 }
 
-function Row({ rank, name, shift, value }) {
+function Row({ rank, name, shift, value, logs }) {
   return (
     <div className="row center" style={{
       justifyContent:'space-between', padding:'8px 10px',
@@ -274,10 +310,36 @@ function Row({ rank, name, shift, value }) {
         <div className="badge" style={{ background:'#f1f5f9', color:'#0f172a' }}>#{rank}</div>
         <div>
           <div style={{ fontWeight:800 }}>{name}</div>
-          <div className="sub">Shift {shift}</div>
+          <div className="sub">Shift {shift} • {logs} log{logs===1?'':'s'}</div>
         </div>
       </div>
       <div className="title">{value}</div>
+    </div>
+  )
+}
+
+function RecentRow({ log, canDelete, onDelete }) {
+  const name = log.displayName || log.name || 'Member'
+  const shift = log.shift || 'A'
+  const val = Number(log.value ?? log.amount ?? 0)
+  const when = fmt(log.updatedAt)
+
+  return (
+    <div className="row center" style={{
+      justifyContent:'space-between', padding:'10px 12px',
+      border:'1px solid #e5e7eb', borderRadius:12, gap:12
+    }}>
+      <div className="hstack" style={{ gap:10 }}>
+        <div style={{ fontWeight:800 }}>{name}</div>
+        <div className="badge shift">Shift {shift}</div>
+        <div className="muted">{when}</div>
+      </div>
+      <div className="hstack" style={{ gap:10 }}>
+        <div className="title">{val}</div>
+        {canDelete && (
+          <button className="btn danger" onClick={onDelete}>Delete</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -289,7 +351,7 @@ function EmptyState() {
     }}>
       <div className="stack center" style={{ gap:6, textAlign:'center' }}>
         <div className="title" style={{ fontSize:18 }}>No entries yet</div>
-        <div className="sub">Be the first to log this week’s total and lead the board.</div>
+        <div className="sub">Add a log to start the board for this week.</div>
       </div>
     </div>
   )
@@ -298,8 +360,8 @@ function EmptyState() {
 function FooterHint() {
   return (
     <div className="text-xs text-slate-500" style={{ marginTop: 8 }}>
-      This page reads from <code>weekly_logs/&lt;weekId&gt;/entries</code> and coalesces per user.
-      Mentors can configure title/details/target in <code>meta/weekly_&lt;weekId&gt;</code> or fallback <code>meta/weekly</code>.
+      Logs are stored in <code>weekly_logs/&lt;weekId&gt;/entries</code> as individual docs.
+      Leaderboard sums logs per user. Only mentors can delete specific logs in <i>Recent Logs</i>.
     </div>
   )
 }
