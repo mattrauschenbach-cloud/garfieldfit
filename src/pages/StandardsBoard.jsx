@@ -17,6 +17,12 @@ const OWNER_EMAILS = [
   "mattrauschenbach@gmail.com",   // current
 ];
 
+// Mentors who can also check off tiers (edit this list)
+const MENTOR_EMAILS = [
+  "mentor1@gmail.com",
+  "mentor2@gmail.com",
+];
+
 // ---- STATIC STANDARDS DATA -----------------------------------------------
 const STANDARDS = {
   Developmental: [
@@ -82,6 +88,13 @@ export default function StandardsBoard() {
     const email = user?.email?.toLowerCase?.();
     return email ? OWNER_EMAILS.map((e) => e.toLowerCase()).includes(email) : false;
   }, [user]);
+
+  const isMentor = useMemo(() => {
+    const email = user?.email?.toLowerCase?.();
+    return email ? MENTOR_EMAILS.map((e) => e.toLowerCase()).includes(email) : false;
+  }, [user]);
+
+  const isEditor = isOwner || isMentor;
 
   useEffect(() => {
     let mounted = true;
@@ -189,7 +202,7 @@ export default function StandardsBoard() {
             {p.passed ? "Passed" : "In Progress"}
           </span>
         </div>
-        {isOwner && (
+        {isEditor && (
           <div className="col-span-12 mt-3 grid grid-cols-12 items-center gap-3">
             <div className="col-span-8 md:col-span-9">
               <input
@@ -222,8 +235,8 @@ export default function StandardsBoard() {
           <h1 className="text-2xl font-bold md:text-3xl">Standards Board</h1>
           <p className="mt-1 text-gray-600">
             View all tiers, track member progress, and see who has passed. {" "}
-            {isOwner ? (
-              <span className="font-medium text-emerald-700">Owner editing enabled.</span>
+            {isEditor ? (
+              <span className="font-medium text-emerald-700">Editing enabled (owner/mentor).</span>
             ) : (
               <span className="font-medium text-gray-700">Read-only mode.</span>
             )}
