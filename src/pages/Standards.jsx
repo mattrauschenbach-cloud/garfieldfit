@@ -1,78 +1,10 @@
 // src/pages/Standards.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '../lib/firebase'
-import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
-
-// Static fallback (used if Firestore is empty or blocked by rules)
-const FALLBACK = {
-  committed: [
-    { id: 'c1', title: '1.5 Mile Run', detail: '13:15 or less' },
-    { id: 'c2', title: 'Push-ups', detail: '40 reps unbroken' },
-    { id: 'c3', title: 'Air Squats', detail: '75 reps unbroken' },
-  ],
-  developed: [
-    { id: 'd1', title: '1.5 Mile Run', detail: '12:00 or less' },
-    { id: 'd2', title: 'Push-ups', detail: '60 reps unbroken' },
-    { id: 'd3', title: 'Sit-ups', detail: '75 reps unbroken' },
-  ],
-  advanced: [
-    { id: 'a1', title: '1.5 Mile Run', detail: '10:30 or less' },
-    { id: 'a2', title: 'Push-ups', detail: '80 reps unbroken' },
-    { id: 'a3', title: 'Pull-ups', detail: '15 reps strict' },
-  ],
-  elite: [
-    { id: 'e1', title: '1.5 Mile Run', detail: '9:30 or less' },
-    { id: 'e2', title: 'Push-ups', detail: '100 reps unbroken' },
-    { id: 'e3', title: 'Burpees', detail: '50 reps unbroken' },
-  ],
-}
-
-const TIERS = [
-  { value: 'committed', label: 'Committed' },
-  { value: 'developed', label: 'Developed' },
-  { value: 'advanced',  label: 'Advanced'  },
-  { value: 'elite',     label: 'Elite'     },
-]
-
-/**
- * Firestore shape (collection "standards"):
- *   standards/<autoId> {
- *     tier: "committed" | "developed" | "advanced" | "elite",
- *     title: string,
- *     detail?: string,
- *     order?: number
- *   }
- */
+import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/
 export default function Standards() {
   const [tier, setTier] = useState('committed')
-  const [search, setSearch] = useState('')
-  const [groups, setGroups] = useState(FALLBACK)  // { committed:[], developed:[], ... }
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const col = collection(db, 'standards')
-    let unsub
-
-    try {
-      const q = query(col, orderBy('order', 'asc'))
-      unsub = onSnapshot(q, async (snap) => {
-        if (snap.empty) { setGroups(FALLBACK); setLoading(false); return }
-        setGroups(buildGroupsFromSnap(snap)); setLoading(false)
-      }, async () => {
-        // If onSnapshot fails due to rules, try one-time read:
-        try {
-          const snap = await getDocs(col)
-          if (snap.empty) setGroups(FALLBACK)
-          else setGroups(buildGroupsFromSnap(snap))
-        } catch {
-          setGroups(FALLBACK)
-        } finally { setLoading(false) }
-      })
-    } catch {
-      setGroups(FALLBACK); setLoading(false)
-    }
-
-    return () => { if (unsub) unsub() }
+  
   }, [])
 
   const list = groups[tier] || []
