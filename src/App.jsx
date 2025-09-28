@@ -1,128 +1,184 @@
 // src/App.jsx
-import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import AppShell from './components/AppShell.jsx'          // make sure this file exists (we added earlier)
+import { Suspense, lazy } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
-import { auth, db } from './lib/firebase'
-import { doc, getDoc } from 'firebase/firestore'
+// Shell & route guards
+import AppShell from './components/AppShell.jsx'
+import ProtectedRoute from './components/ProtectedRoute.jsx'
+import MentorRoute from './components/MentorRoute.jsx'
 
-// ---- Pages (match your repo) ----
-import Home from './pages/Home.jsx'
-import Login from './pages/Login.jsx'
-import WeeklyChallenge from './pages/WeeklyChallenge.jsx'
-import MonthlyChallenge from './pages/MonthlyChallenge.jsx'
-import Members from './pages/Members.jsx'
-import Leaderboard from './pages/Leaderboard.jsx'
-import Standards from './pages/Standards.jsx'
-import StandardsImport from './pages/StandardsImport.jsx'
-import WeeklyAdmin from './pages/WeeklyAdmin.jsx'
-import TierCheckoff from './pages/TierCheckoff.jsx'
-import Diag from './pages/Diag.jsx'
-import PermTest from './pages/PermTest.jsx'
-import Ping from './pages/Ping.jsx'
-import StandardsBoard from './pages/StandardsBoard.jsx'
+// Lazy-load pages (React Router v6)
+const Home = lazy(() => import('./pages/Home.jsx'))
+const Login = lazy(() => import('./pages/Login.jsx'))
+const WeeklyChallenge = lazy(() => import('./pages/WeeklyChallenge.jsx'))
+const MonthlyChallenge = lazy(() => import('./pages/MonthlyChallenge.jsx'))
+const Members = lazy(() => import('./pages/Members.jsx'))
+const Leaderboard = lazy(() => import('./pages/Leaderboard.jsx'))
+const Standards = lazy(() => import('./pages/Standards.jsx'))
+const StandardsBoard = lazy(() => import('./pages/StandardsBoard.jsx'))
+const StandardsImport = lazy(() => import('./pages/StandardsImport.jsx'))
+const AdminStandards = lazy(() => import('./pages/AdminStandards.jsx'))
+const TierCheckoff = lazy(() => import('./pages/TierCheckoff.jsx'))
+const WeeklyAdmin = lazy(() => import('./pages/WeeklyAdmin.jsx'))
+const MonthlyAdmin = lazy(() => import('./pages/MonthlyAdmin.jsx'))
+const Diag = lazy(() => import('./pages/Diag.jsx'))
+const Ping = lazy(() => import('./pages/Ping.jsx'))
+const PermTest = lazy(() => import('./pages/PermTest.jsx'))
 
-// ------------------------------------------------------------------
-// Lightweight guards embedded here so you don't need extra files.
-// ------------------------------------------------------------------
-
-function useAuthSnapshot() {
-  const [user, setUser] = useState(() => auth.currentUser || null)
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged(u => setUser(u))
-    return () => unsub()
-  }, [])
-  return user
+function LoadingCard() {
+  return <div className="card pad">Loading…</div>
 }
-
-function useProfile(uid) {
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(!!uid)
-  useEffect(() => {
-    let cancelled = false
-    if (!uid) { setProfile(null); setLoading(false); return }
-    ;(async () => {
-      try {
-        const snap = await getDoc(doc(db, 'profiles', uid))
-        if (!cancelled) setProfile(snap.exists() ? { id: uid, ...snap.data() } : { id: uid })
-      } catch {
-        if (!cancelled) setProfile({ id: uid })
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [uid])
-  return { profile, loading }
-}
-
-function ProtectedRoute({ children }) {
-  const user = useAuthSnapshot()
-  const loc = useLocation()
-  if (user === null) {
-    // not signed in
-    return <Navigate to="/login" state={{ from: loc.pathname }} replace />
-  }
-  return children
-}
-
-function MentorRoute({ children }) {
-  const user = useAuthSnapshot()
-  const { profile, loading } = useProfile(user?.uid || null)
-
-  if (!user) return <Navigate to="/login" replace />
-  if (loading) return <div className="card pad">Checking permissions…</div>
-
-  const role = profile?.role
-  const isMentor = role === 'mentor' || role === 'admin'
-  if (!isMentor) {
-    return (
-      <div className="card pad vstack" style={{ gap:8 }}>
-        <div className="title">Mentor access required</div>
-        <div className="sub">Ask a mentor/admin to change your role in Profiles.</div>
-      </div>
-    )
-  }
-  return children
-}
-
-// ------------------------------------------------------------------
-// App routes wrapped in the mobile AppShell
-// ------------------------------------------------------------------
 
 export default function App() {
   return (
     <BrowserRouter>
       <AppShell>
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/ping" element={<Ping />} />
+        <Suspense fallback={<LoadingCard />}>
+          <Routes>
+            {/* Public */}
+            <Route path="/login" element={<Login />} />
 
-          {/* Auth-only */}
-          <Route path="/weekly" element={<ProtectedRoute><WeeklyChallenge /></ProtectedRoute>} />
-          <Route path="/monthly" element={<ProtectedRoute><MonthlyChallenge /></ProtectedRoute>} />
-          <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
-          <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-          <Route path="/standards" element={<ProtectedRoute><Standards /></ProtectedRoute>} />
-          <Route path="/standards-import" element={<ProtectedRoute><StandardsImport /></ProtectedRoute>} />
-          <Route path="/diag" element={<ProtectedRoute><Diag /></ProtectedRoute>} />
-          <Route path="/permtest" element={<ProtectedRoute><PermTest /></ProtectedRoute>} />
-          <Route path="/standards-board" element={<ProtectedRoute><StandardsBoard /></ProtectedRoute>} />
-         
-          {/* Mentor/Admin-only */}
-          <Route path="/weekly-admin" element={
-            <ProtectedRoute><MentorRoute><WeeklyAdmin /></MentorRoute></ProtectedRoute>
-          } />
-          <Route path="/tier-checkoff" element={
-            <ProtectedRoute><MentorRoute><TierCheckoff /></MentorRoute></ProtectedRoute>
-          } />
+            {/* Auth-required pages */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Home />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/weekly"
+              element={
+                <ProtectedRoute>
+                  <WeeklyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/monthly"
+              element={
+                <ProtectedRoute>
+                  <MonthlyChallenge />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/members"
+              element={
+                <ProtectedRoute>
+                  <Members />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/leaderboard"
+              element={
+                <ProtectedRoute>
+                  <Leaderboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/standards"
+              element={
+                <ProtectedRoute>
+                  <Standards />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/standards-board"
+              element={
+                <ProtectedRoute>
+                  <StandardsBoard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/standards-import"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <StandardsImport />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Legacy redirect & 404 */}
-          <Route path="/home" element={<Navigate to="/" replace />} />
-          <Route path="*" element={<div className="card pad">Page not found.</div>} />
-        </Routes>
+            {/* Admin / Mentor-only */}
+            <Route
+              path="/admin-standards"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <AdminStandards />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/weekly-admin"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <WeeklyAdmin />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/monthly-admin"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <MonthlyAdmin />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tier-checkoff"
+              element={
+                <ProtectedRoute>
+                  <MentorRoute>
+                    <TierCheckoff />
+                  </MentorRoute>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Utilities / diagnostics (keep protected unless you want them public) */}
+            <Route
+              path="/diag"
+              element={
+                <ProtectedRoute>
+                  <Diag />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ping"
+              element={
+                <ProtectedRoute>
+                  <Ping />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/perm-test"
+              element={
+                <ProtectedRoute>
+                  <PermTest />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Legacy + 404 */}
+            <Route path="/home" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<div className="card pad">Page not found.</div>} />
+          </Routes>
+        </Suspense>
       </AppShell>
     </BrowserRouter>
   )
