@@ -2,40 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { auth, db } from '../lib/firebase'
 import {
-  addDoc, collection, doc, getDoc, getDocs,
-  limit, onSnapshot, orderBy, query, serverTimestamp
-} from 'firebase/firestore'
-
-// ---------- Built-in defaults (used if /meta/standards is missing) ----------
-const DEFAULTS = {
-  committed: {
-    title: 'Committed',
-    items: [
-      { key: 'attendance', name: 'Attendance', target: 'All mandatory sessions' },
-      { key: 'hydration',  name: 'Hydration',  target: 'Meets daily target' },
-    ],
-  },
-  developmental: {
-    title: 'Developmental',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'1.5 × BW (min 225 × 3)' },
-      { key: 'bench', name:'Bench Press', target:'135 lb × 5' },
-      { key: 'backsquat', name:'Back Squat', target:'1.5 × BW (min 185 × 3)' },
-      { key: 'pullups', name:'Pull-Ups', target:'8 strict or 3 @15 lb' },
-      { key: 'pushups', name:'Push-Ups', target:'40 unbroken' },
-      { key: 'ohp', name:'Overhead Press', target:'95 lb × 3' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'2×100 lb for 150 ft' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'80 lb × 200 ft' },
-      { key: 'mile', name:'1 Mile Run', target:'< 9:30' },
-      { key: 'row500', name:'500m Row', target:'< 1:55' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'10 flights < 6:00' },
-      { key: 'burpees', name:'Burpees', target:'50 < 4:00' },
-      { key: 'wallballs', name:'Wall Balls', target:'50 unbroken @20 lb' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'8 min continuous' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Under 35 min' },
-    ],
-  },
-  advanced: {
+  addDoc, collection, doc, getDoc, 
     title: 'Advanced',
     items: [
       { key: 'deadlift', name:'Deadlift', target:'1.75 × BW (min 315 × 3)' },
