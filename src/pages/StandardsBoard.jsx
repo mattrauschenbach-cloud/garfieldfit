@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import {
   collection,
   doc,
@@ -11,27 +11,13 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
-/**
- * StandardsBoard.jsx — FULL COPY, FIXED
- * - Compiles with Vite + React
- * - Uses Firebase v9 modular SDK
- * - Renders all standards (Developmental / Advanced / Elite)
- * - Shows member progress; only owner can edit
- * - Includes a Passed vs In-Progress board with the fixed if/else braces
- *
- * 📌 Setup expected:
- *   - You have Firebase initialized somewhere in your app
- *   - If you already export `auth` and `db` from a file like `src/lib/firebase.js`,
- *     you can replace the getAuth()/getFirestore() calls with your imports.
- */
-
 // ---- CONFIGURE OWNER ACCESS ----------------------------------------------
-// Add your owner emails here. Only these users will be able to edit standards
 const OWNER_EMAILS = [
-  "mrauschenbach@rocketmail.com", // Matt
+  "mrauschenbach@rocketmail.com", // old
+  "mattrauschenbach@gmail.com",   // current
 ];
 
-// ---- STATIC STANDARDS DATA (edit as needed) -------------------------------
+// ---- STATIC STANDARDS DATA -----------------------------------------------
 const STANDARDS = {
   Developmental: [
     { id: "dev-1.5mi", label: "1.5 Mile Run ≤ 13:15" },
@@ -51,7 +37,6 @@ const STANDARDS = {
   ],
 };
 
-// Optionally show circuit definition somewhere in UI
 const CIRCUIT = [
   "100 Push-ups",
   "100 Air Squats",
@@ -61,33 +46,33 @@ const CIRCUIT = [
   "25 Pull-ups",
 ];
 
-// ---- TYPES ----------------------------------------------------------------
-/** Member document shape expected from Firestore:
- *  members/{memberId} => { displayName: string, shift: string }
- *
- * Progress document shape expected from Firestore:
- *  progress/{memberId} => { pct: number (0-100), passed: boolean }
- *
- * You can adapt these collection names in the QUERIES section below.
- */
-
-// ---- UTIL -----------------------------------------------------------------
 function classNames(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-// ---- MAIN COMPONENT -------------------------------------------------------
+function AuthButton({ auth, user }) {
+  const provider = new GoogleAuthProvider();
+  return user ? (
+    <button onClick={() => signOut(auth)} className="rounded-lg border px-3 py-1 text-sm">
+      Sign out ({user.email})
+    </button>
+  ) : (
+    <button onClick={() => signInWithPopup(auth, provider)} className="rounded-lg border px-3 py-1 text-sm">
+      Sign in with Google
+    </button>
+  );
+}
+
 export default function StandardsBoard() {
   const [db] = useState(() => getFirestore());
   const [auth] = useState(() => getAuth());
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [members, setMembers] = useState([]); // [{id, displayName, shift}]
-  const [progress, setProgress] = useState({}); // { memberId: { pct, passed } }
+  const [members, setMembers] = useState([]);
+  const [progress, setProgress] = useState({});
   const [savingId, setSavingId] = useState(null);
 
-  // Auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
@@ -98,13 +83,11 @@ export default function StandardsBoard() {
     return email ? OWNER_EMAILS.map((e) => e.toLowerCase()).includes(email) : false;
   }, [user]);
 
-  // ---- QUERIES: load members & progress ----------------------------------
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       try {
-        // members collection
         const membersSnap = await getDocs(query(collection(db, "members"), orderBy("displayName")));
         const ms = [];
         membersSnap.forEach((d) => {
@@ -112,7 +95,6 @@ export default function StandardsBoard() {
           ms.push({ id: d.id, displayName: data.displayName || "Firefighter", shift: data.shift || "" });
         });
 
-        // progress collection
         const progressSnap = await getDocs(collection(db, "progress"));
         const map = {};
         progressSnap.forEach((d) => {
@@ -138,7 +120,6 @@ export default function StandardsBoard() {
     };
   }, [db]);
 
-  // ---- DERIVED: boards (Passed vs In-Progress) ----------------------------
   const boards = useMemo(() => {
     const passed = [];
     const inprog = [];
@@ -152,7 +133,6 @@ export default function StandardsBoard() {
         shift: m.shift || "",
         pct: p.pct,
       };
-      // ✅ FIXED: braces around if/else
       if (p.passed) {
         passed.push(row);
       } else {
@@ -166,24 +146,21 @@ export default function StandardsBoard() {
     return { passed, inprog };
   }, [members, progress]);
 
-  // ---- ACTIONS: owner can update progress --------------------------------
   const updateMemberProgress = async (memberId, data) => {
     try {
       setSavingId(memberId);
       const ref = doc(db, "progress", memberId);
-      // ensure doc exists, then update
       await setDoc(ref, { pct: 0, passed: false }, { merge: true });
       await updateDoc(ref, data);
       setProgress((prev) => ({ ...prev, [memberId]: { ...prev[memberId], ...data } }));
     } catch (e) {
       console.error(e);
-      alert("Failed to save. Check console for details.");
+      alert(`Failed to save: ${e?.code || e}`);
     } finally {
       setSavingId(null);
     }
   };
 
-  // ---- UI HELPERS ---------------------------------------------------------
   const MemberRow = ({ m }) => {
     const p = progress[m.id] || { pct: 0, passed: false };
 
@@ -240,7 +217,6 @@ export default function StandardsBoard() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 md:py-10">
-      {/* Header */}
       <div className="mb-6 flex flex-col items-start justify-between gap-3 md:mb-10 md:flex-row md:items-center">
         <div>
           <h1 className="text-2xl font-bold md:text-3xl">Standards Board</h1>
@@ -253,14 +229,16 @@ export default function StandardsBoard() {
             )}
           </p>
         </div>
-        {savingId && (
-          <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-4 py-1 text-sm text-amber-800">
-            Saving…
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {savingId && (
+            <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-4 py-1 text-sm text-amber-800">
+              Saving…
+            </div>
+          )}
+          <AuthButton auth={auth} user={user} />
+        </div>
       </div>
 
-      {/* Standards Panels */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {Object.entries(STANDARDS).map(([tier, items]) => (
           <div key={tier} className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -282,15 +260,11 @@ export default function StandardsBoard() {
         ))}
       </div>
 
-      {/* Circuit callout */}
       <div className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
         <div className="mb-2 text-sm font-semibold text-slate-700">Circuit (from packet)</div>
-        <div className="text-sm text-slate-700">
-          {CIRCUIT.join(" • ")}
-        </div>
+        <div className="text-sm text-slate-700">{CIRCUIT.join(" • ")}</div>
       </div>
 
-      {/* Members Progress */}
       <div className="mt-10">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Members</h2>
@@ -313,7 +287,6 @@ export default function StandardsBoard() {
         )}
       </div>
 
-      {/* Status Boards */}
       <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="rounded-2xl border bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
@@ -367,7 +340,6 @@ export default function StandardsBoard() {
         </div>
       </div>
 
-      {/* Footer note */}
       <div className="mt-10 text-center text-xs text-slate-500">
         Standards Board · Garfield Heights · Last updated {new Date().toLocaleDateString()}
       </div>
