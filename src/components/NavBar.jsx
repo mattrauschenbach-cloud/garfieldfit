@@ -1,93 +1,44 @@
 // src/components/NavBar.jsx
-import { Link, useLocation } from "react-router-dom"
-import { useAuthState } from "react-firebase-hooks/auth"
-import { auth, db } from "../lib/firebase"
-import { useEffect, useState } from "react"
-import { doc, getDoc } from "firebase/firestore"
+import { Link, useLocation } from 'react-router-dom'
+import { useAuthState } from '../lib/auth.jsx'
 
-const tabs = [
-  { to: "/", label: "Home" },
-  { to: "/weekly", label: "Weekly" },
-  { to: "/monthly", label: "Monthly" },
-  { to: "/members", label: "Members" },
-  { to: "/leaderboard", label: "Leaderboard" },
-  { to: "/standards", label: "Standards" },
-  { to: "/weekly-admin", label: "Weekly Admin", restricted: true },
-  { to: "/tier-checkoff", label: "Tier Checkoff", restricted: true },
-  { to: "/diag", label: "Diag" },
-  { to: "/permtest", label: "Perm Test" },
-]
+function NavItem({ to, label }) {
+  const loc = useLocation()
+  const active = loc.pathname === to
+  return (
+    <Link
+      to={to}
+      className={`nav-item ${active ? 'active' : ''}`}
+    >
+      {label}
+    </Link>
+  )
+}
 
 export default function NavBar() {
-  const { pathname } = useLocation()
-  const [user] = useAuthState(auth)
-  const [role, setRole] = useState(null)
-
-  useEffect(() => {
-    async function fetchRole() {
-      if (user) {
-        const snap = await getDoc(doc(db, "profiles", user.uid))
-        if (snap.exists()) {
-          setRole(snap.data().role || "member")
-        } else {
-          setRole("member")
-        }
-      } else {
-        setRole(null)
-      }
-    }
-    fetchRole()
-  }, [user])
-
-  const canSeeAdmin = role === "mentor" || role === "admin" || role === "owner"
+  const { profile } = useAuthState()
+  const isMentor = profile?.role === 'mentor' || profile?.role === 'admin'
 
   return (
-    <header className="w-full bg-slate-900 text-white shadow-md">
-      <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between">
-        {/* Brand */}
-        <Link to="/" className="font-bold text-lg whitespace-nowrap">
-          Station 1 Fit
-        </Link>
+    <nav className="navbar">
+      <div className="nav-items">
+        <NavItem to="/" label="Home" />
+        <NavItem to="/weekly" label="Weekly" />
+        <NavItem to="/monthly" label="Monthly" />
+        <NavItem to="/members" label="Members" />
+        <NavItem to="/leaderboard" label="Leaderboard" />
+        <NavItem to="/standards" label="Standards" />
 
-        {/* Tabs */}
-        <nav className="flex flex-wrap gap-2 mt-2 sm:mt-0">
-          {tabs.map((t) => {
-            if (t.restricted && !canSeeAdmin) return null
-            return (
-              <Link
-                key={t.to}
-                to={t.to}
-                className={`px-3 py-1 rounded-md text-sm font-medium ${
-                  pathname === t.to
-                    ? "bg-slate-700 text-white"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {t.label}
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* Right side (login/logout) */}
-        <div className="ml-auto mt-2 sm:mt-0">
-          {user ? (
-            <button
-              onClick={() => auth.signOut()}
-              className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded-md text-sm font-semibold"
-            >
-              Logout
-            </button>
-          ) : (
-            <Link
-              to="/login"
-              className="bg-white text-slate-900 px-3 py-1 rounded-md font-semibold text-sm"
-            >
-              Login
-            </Link>
-          )}
-        </div>
+        {/* Mentor-only section */}
+        {isMentor && (
+          <>
+            <div className="nav-divider" />
+            <NavItem to="/weekly-admin" label="Weekly Admin" />
+            <NavItem to="/monthly-admin" label="Monthly Admin" />
+            <NavItem to="/tier-checkoff" label="Tier Checkoff" />
+          </>
+        )}
       </div>
-    </header>
+    </nav>
   )
 }
