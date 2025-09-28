@@ -13,7 +13,6 @@ const Login = lazy(() => import('./pages/Login.jsx'))
 const WeeklyChallenge = lazy(() => import('./pages/WeeklyChallenge.jsx'))
 const MonthlyChallenge = lazy(() => import('./pages/MonthlyChallenge.jsx'))
 const Members = lazy(() => import('./pages/Members.jsx'))
-const Leaderboard = lazy(() => import('./pages/Leaderboard.jsx'))
 const Standards = lazy(() => import('./pages/Standards.jsx'))
 const StandardsBoard = lazy(() => import('./pages/StandardsBoard.jsx'))
 const StandardsImport = lazy(() => import('./pages/StandardsImport.jsx'))
@@ -68,14 +67,6 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Members />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/leaderboard"
-              element={
-                <ProtectedRoute>
-                  <Leaderboard />
                 </ProtectedRoute>
               }
             />
