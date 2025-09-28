@@ -1,3 +1,93 @@
+// src/pages/Standards.jsx
+import { useEffect, useMemo, useState } from 'react'
+import { db } from '../lib/firebase'
+import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
+
+// Fallback data if Firestore is empty or blocked
+const FALLBACK = {
+  committed: [
+    { id: 'c1', title: '1.5 Mile Run', detail: '13:15 or less' },
+    { id: 'c2', title: 'Push-ups', detail: '40 reps unbroken' },
+    { id: 'c3', title: 'Air Squats', detail: '75 reps unbroken' },
+  ],
+  developed: [
+    { id: 'd1', title: '1.5 Mile Run', detail: '12:00 or less' },
+    { id: 'd2', title: 'Push-ups', detail: '60 reps unbroken' },
+    { id: 'd3', title: 'Sit-ups', detail: '75 reps unbroken' },
+  ],
+  advanced: [
+    { id: 'a1', title: '1.5 Mile Run', detail: '10:30 or less' },
+    { id: 'a2', title: 'Push-ups', detail: '80 reps unbroken' },
+    { id: 'a3', title: 'Pull-ups', detail: '15 reps strict' },
+  ],
+  elite: [
+    { id: 'e1', title: '1.5 Mile Run', detail: '9:30 or less' },
+    { id: 'e2', title: 'Push-ups', detail: '100 reps unbroken' },
+    { id: 'e3', title: 'Burpees', detail: '50 reps unbroken' },
+  ],
+}
+
+const TIERS = [
+  { value: 'committed', label: 'Committed' },
+  { value: 'developed', label: 'Developed' },
+  { value: 'advanced',  label: 'Advanced'  },
+  { value: 'elite',     label: 'Elite'     },
+]
+
+/**
+ * Firestore shape (collection "standards"):
+ * standards/<autoId> { tier: 'committed'|'developed'|'advanced'|'elite', title, detail?, order? }
+ */
+export default function Standards() {
+  const [tier, setTier] = useState('committed')
+  const [search, setSearch] = useState('')
+  const [groups, setGroups] = useState(FALLBACK)  // { committed:[], developed:[], advanced:[], elite:[] }
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const col = collection(db, 'standards')
+    let unsub
+
+    try {
+      const q = query(col, orderBy('order', 'asc'))
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          if (snap.empty) { setGroups(FALLBACK); setLoading(false); return }
+          setGroups(buildGroupsFromSnap(snap))
+          setLoading(false)
+        },
+        async () => {
+          // fallback to one-time read (some rules block onSnapshot)
+          try {
+            const snap = await getDocs(col)
+            if (snap.empty) setGroups(FALLBACK)
+            else setGroups(buildGroupsFromSnap(snap))
+          } catch {
+            setGroups(FALLBACK)
+          } finally {
+            setLoading(false)
+          }
+        }
+      )
+    } catch {
+      setGroups(FALLBACK)
+      setLoading(false)
+    }
+
+    return () => { if (unsub) unsub() }
+  }, [])
+
+  const list = groups[tier] || []
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return list
+    return list.filter(s =>
+      (s.title || '').toLowerCase().includes(q) ||
+      (s.detail || '').toLowerCase().includes(q)
+    )
+  }, [list, search])
 
   return (
     <section className="stack" style={{ gap: 16 }}>
@@ -5,7 +95,7 @@
         <div className="row between center">
           <div>
             <h1 className="title">Fitness Standards</h1>
-            <div className="sub">View standards per tier with a quick filter</div>
+            <div className="sub">Choose a tier to view standards separately</div>
           </div>
           <span className="badge shift">{labelFor(tier)}</span>
         </div>
@@ -26,7 +116,7 @@
               className="input"
               placeholder="Type to filter…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
@@ -52,7 +142,7 @@
       </div>
 
       <div className="muted" style={{ fontSize: 12 }}>
-        Data source: <code>standards</code> collection (live). Falls back to a local list if empty or blocked by rules.
+        Source: <code>standards</code> (Firestore). Falls back to a local list if empty or blocked by rules.
       </div>
     </section>
   )
@@ -62,7 +152,7 @@ function buildGroupsFromSnap(snap) {
   const byTier = { committed: [], developed: [], advanced: [], elite: [] }
   snap.forEach((d) => {
     const data = d.data() || {}
-    const t = (data.tier || 'committed')
+    const t = data.tier || 'committed'
     if (!byTier[t]) byTier[t] = []
     byTier[t].push({
       id: d.id,
