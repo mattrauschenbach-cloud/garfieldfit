@@ -1,198 +1,285 @@
 // src/pages/AdminStandards.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { auth, db } from '../lib/firebase'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import {
+  addDoc, collection, deleteDoc, doc, getDoc,
+  onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc
+} from 'firebase/firestore'
 
-// CHANGE THIS to your UID (same one you used in rules)
-const OWNER_UID = "0lUAgnE3S1hshWPCpB4K6hXwvh43"
-
-// default catalog if meta/standards doesn’t exist yet
-const DEFAULTS = {
-  committed: {
-    title: 'Committed',
-    items: [
-      { key: 'attendance', name: 'Attendance', target: 'All mandatory sessions' },
-      { key: 'hydration',  name: 'Hydration',  target: 'Meets daily target' },
-    ],
-  },
-  developmental: {
-    title: 'Developmental',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'1.5 × BW (min 225 × 3)' },
-      { key: 'bench', name:'Bench Press', target:'135 lb × 5' },
-      { key: 'backsquat', name:'Back Squat', target:'1.5 × BW (min 185 × 3)' },
-      { key: 'pullups', name:'Pull-Ups', target:'8 strict or 3 @15 lb' },
-      { key: 'pushups', name:'Push-Ups', target:'40 unbroken' },
-      { key: 'ohp', name:'Overhead Press', target:'95 lb × 3' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'2×100 lb for 150 ft' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'80 lb × 200 ft' },
-      { key: 'mile', name:'1 Mile Run', target:'< 9:30' },
-      { key: 'row500', name:'500m Row', target:'< 1:55' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'10 flights < 6:00' },
-      { key: 'burpees', name:'Burpees', target:'50 < 4:00' },
-      { key: 'wallballs', name:'Wall Balls', target:'50 unbroken @20 lb' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'8 min continuous' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Under 35 min' },
-    ],
-  },
-  advanced: {
-    title: 'Advanced',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'1.75 × BW (min 315 × 3)' },
-      { key: 'bench', name:'Bench Press', target:'185 lb × 5' },
-      { key: 'backsquat', name:'Back Squat', target:'1.75 × BW (min 275 × 3)' },
-      { key: 'pullups', name:'Pull-Ups', target:'15 strict or 5 @25 lb' },
-      { key: 'pushups', name:'Push-Ups', target:'60 unbroken' },
-      { key: 'ohp', name:'Overhead Press', target:'135 lb × 3' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'2×120 lb for 150 ft' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'100 lb × 200 ft' },
-      { key: 'mile', name:'1 Mile Run', target:'< 9:00' },
-      { key: 'row500', name:'500m Row', target:'< 1:40' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'10 flights < 5:00' },
-      { key: 'burpees', name:'Burpees', target:'50 < 3:30' },
-      { key: 'wallballs', name:'Wall Balls', target:'50 unbroken @30 lb' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'10 min continuous' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Under 30 min' },
-    ],
-  },
-  elite: {
-    title: 'Elite',
-    items: [
-      { key: 'deadlift', name:'Deadlift', target:'Coach-defined' },
-      { key: 'bench', name:'Bench Press', target:'Coach-defined' },
-      { key: 'backsquat', name:'Back Squat', target:'Coach-defined' },
-      { key: 'pullups', name:'Pull-Ups', target:'Coach-defined' },
-      { key: 'pushups', name:'Push-Ups', target:'Coach-defined' },
-      { key: 'ohp', name:'Overhead Press', target:'Coach-defined' },
-      { key: 'farmer', name:'Farmer’s Carry', target:'Coach-defined' },
-      { key: 'sandbag', name:'Sandbag Carry', target:'Coach-defined' },
-      { key: 'mile', name:'1 Mile Run', target:'Coach-defined' },
-      { key: 'row500', name:'500m Row', target:'Coach-defined' },
-      { key: 'stairs', name:'Stair Sprint (40 lb)', target:'Coach-defined' },
-      { key: 'burpees', name:'Burpees', target:'Coach-defined' },
-      { key: 'wallballs', name:'Wall Balls', target:'Coach-defined' },
-      { key: 'jacob', name:'Jacob’s Ladder', target:'Coach-defined' },
-      { key: 'circuit', name:'Circuit Challenge', target:'Coach-defined' },
-    ],
-  },
-}
+const TIERS = [
+  { value: 'committed', label: 'Committed' },
+  { value: 'developed', label: 'Developed' },
+  { value: 'advanced',  label: 'Advanced'  },
+  { value: 'elite',     label: 'Elite'     },
+]
 
 export default function AdminStandards() {
-  const uid = auth.currentUser?.uid || null
-  const isOwner = uid === OWNER_UID
+  const [user, setUser] = useState(() => auth.currentUser)
+  const [role, setRole] = useState('member')
+  const isMentor = role === 'mentor' || role === 'admin'
 
-  const [tiers, setTiers] = useState(DEFAULTS)
+  const [tier, setTier] = useState('committed')
+  const [list, setList] = useState([])     // current tier list [{id,title,detail,order}]
   const [loading, setLoading] = useState(true)
+
+  const [editing, setEditing] = useState(null) // {id?, title, detail, order, tier}
   const [saving, setSaving] = useState(false)
 
+  // auth + role
   useEffect(() => {
-    (async () => {
+    const unsub = auth.onAuthStateChanged(async (u) => {
+      setUser(u)
+      if (!u?.uid) { setRole('member'); return }
       try {
-        const snap = await getDoc(doc(db, 'meta', 'standards'))
-        if (snap.exists()) {
-          const data = snap.data()
-          if (data?.tiers) setTiers(data.tiers)
-        }
-      } catch (e) {
-        console.warn('standards meta load failed', e)
-      } finally {
-        setLoading(false)
-      }
-    })()
+        const snap = await getDoc(doc(db, 'profiles', u.uid))
+        setRole((snap.exists() ? snap.data()?.role : 'member') || 'member')
+      } catch { setRole('member') }
+    })
+    return () => unsub()
   }, [])
 
-  async function saveAll() {
-    if (!isOwner) return alert('Only the owner can save.')
+  // live load standards for selected tier
+  useEffect(() => {
+    setLoading(true)
+    const q = query(collection(db, 'standards'), orderBy('tier', 'asc'), orderBy('order', 'asc'))
+    const unsub = onSnapshot(q, (snap) => {
+      const all = []
+      snap.forEach((d) => {
+        const data = d.data() || {}
+        all.push({
+          id: d.id,
+          title: data.title || 'Untitled',
+          detail: data.detail || '',
+          order: data.order ?? 0,
+          tier: data.tier || 'committed',
+        })
+      })
+      const current = all.filter(s => s.tier === tier).sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
+      setList(current)
+      setLoading(false)
+    }, () => setLoading(false))
+    return () => unsub()
+  }, [tier])
+
+  // start creating new
+  function startNew() {
+    const maxOrder = list.length ? Math.max(...list.map(i => i.order ?? 0)) : -1
+    setEditing({ id: null, title: '', detail: '', order: maxOrder + 1, tier })
+  }
+
+  // start editing existing
+  function startEdit(item) {
+    setEditing({ ...item })
+  }
+
+  // cancel edit
+  function cancelEdit() {
+    setEditing(null)
+  }
+
+  // save (create or update)
+  async function saveEdit() {
+    if (!isMentor) return alert('Mentor/admin only.')
+    if (!editing?.title?.trim()) return alert('Title is required.')
     setSaving(true)
     try {
-      await setDoc(doc(db, 'meta', 'standards'), {
-        tiers,
-        updatedAt: serverTimestamp(),
-        updatedBy: uid || 'unknown',
-      }, { merge: true })
-      alert('Standards saved.')
+      if (editing.id) {
+        await updateDoc(doc(db, 'standards', editing.id), {
+          title: editing.title.trim(),
+          detail: editing.detail || '',
+          tier: editing.tier || tier,
+          order: Number(editing.order ?? 0),
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        await addDoc(collection(db, 'standards'), {
+          title: editing.title.trim(),
+          detail: editing.detail || '',
+          tier: editing.tier || tier,
+          order: Number(editing.order ?? 0),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
+      setEditing(null)
     } catch (e) {
-      alert('Save failed: ' + (e.message || e.code))
+      console.error(e)
+      alert('Save failed. Check your Firestore rules and network.')
     } finally {
       setSaving(false)
     }
   }
 
-  function addItem(tierKey) {
-    setTiers(prev => {
-      const copy = structuredClone(prev)
-      copy[tierKey].items.push({ key:'new'+Date.now(), name:'New Standard', target:'Define' })
-      return copy
-    })
-  }
-  function removeItem(tierKey, index) {
-    setTiers(prev => {
-      const copy = structuredClone(prev)
-      copy[tierKey].items.splice(index, 1)
-      return copy
-    })
-  }
-  function editItem(tierKey, index, field, value) {
-    setTiers(prev => {
-      const copy = structuredClone(prev)
-      copy[tierKey].items[index][field] = value
-      return copy
-    })
-  }
-  function editTitle(tierKey, value) {
-    setTiers(prev => {
-      const copy = structuredClone(prev)
-      copy[tierKey].title = value
-      return copy
-    })
+  // delete
+  async function remove(id) {
+    if (!isMentor) return
+    if (!confirm('Delete this standard?')) return
+    try { await deleteDoc(doc(db, 'standards', id)) }
+    catch (e) { console.error(e); alert('Delete failed (permissions?).') }
   }
 
-  if (!uid) return <div className="card pad">Please sign in.</div>
-  if (!isOwner) return <div className="card pad">Owner access only.</div>
-  if (loading) return <div className="card pad">Loading…</div>
+  // move up/down within tier by swapping order values
+  async function move(id, dir) {
+    if (!isMentor) return
+    const idx = list.findIndex(i => i.id === id)
+    if (idx < 0) return
+    const j = dir === 'up' ? idx - 1 : idx + 1
+    if (j < 0 || j >= list.length) return
+
+    const a = list[idx]
+    const b = list[j]
+    try {
+      await runTransaction(db, async (tx) => {
+        const aRef = doc(db, 'standards', a.id)
+        const bRef = doc(db, 'standards', b.id)
+        tx.update(aRef, { order: b.order })
+        tx.update(bRef, { order: a.order })
+      })
+    } catch (e) {
+      console.error(e)
+      alert('Reorder failed.')
+    }
+  }
+
+  const headerBadge = useMemo(() => TIERS.find(t=>t.value===tier)?.label || tier, [tier])
+
+  if (!user) {
+    return (
+      <section className="stack" style={{ gap: 16 }}>
+        <div className="card pad">
+          <div className="title">Admin: Edit Standards</div>
+          <div className="sub">Sign in to manage standards.</div>
+        </div>
+      </section>
+    )
+  }
+
+  if (!isMentor) {
+    return (
+      <section className="stack" style={{ gap: 16 }}>
+        <div className="card pad">
+          <div className="title">Access denied</div>
+          <div className="sub">You need mentor/admin privileges to edit standards.</div>
+        </div>
+      </section>
+    )
+  }
 
   return (
-    <div className="vstack" style={{ gap:12 }}>
-      <div className="card pad vstack" style={{ gap:8 }}>
-        <div className="title">Edit Standards (Owner-only)</div>
-        <div className="sub">Changes update the Standards page for everyone.</div>
-        <button className="btn primary" onClick={saveAll} disabled={saving}>
-          {saving ? 'Saving…' : 'Save All'}
-        </button>
+    <section className="stack" style={{ gap: 16 }}>
+      <header className="card pad">
+        <div className="row between center">
+          <div>
+            <h1 className="title">Admin: Edit Standards</h1>
+            <div className="sub">Manage standards by tier. Changes appear instantly on the Standards page.</div>
+          </div>
+          <span className="badge shift">{headerBadge}</span>
+        </div>
+      </header>
+
+      {/* Controls */}
+      <div className="card pad">
+        <div className="grid2" style={{ gap: 12 }}>
+          <div>
+            <label className="label">Tier</label>
+            <select className="input" value={tier} onChange={(e)=>setTier(e.target.value)}>
+              {TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div className="row center" style={{ gap: 8, alignItems:'flex-end', justifyContent:'flex-end' }}>
+            <button className="btn primary" onClick={startNew}>+ New Standard</button>
+          </div>
+        </div>
       </div>
 
-      {Object.entries(tiers).map(([tierKey, tier]) => (
-        <div key={tierKey} className="card pad vstack" style={{ gap:10 }}>
-          <div className="label">Tier title</div>
-          <input value={tier.title} onChange={e=>editTitle(tierKey, e.target.value)} />
+      {/* Edit form */}
+      {editing && (
+        <div className="card pad">
+          <div className="grid3" style={{ gap: 12 }}>
+            <div>
+              <label className="label">Title</label>
+              <input
+                className="input"
+                value={editing.title}
+                onChange={(e)=>setEditing(s=>({ ...s, title:e.target.value }))}
+                placeholder="e.g., Push-ups"
+              />
+            </div>
+            <div>
+              <label className="label">Tier</label>
+              <select
+                className="input"
+                value={editing.tier}
+                onChange={(e)=>setEditing(s=>({ ...s, tier:e.target.value }))}
+              >
+                {TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Order (within tier)</label>
+              <input
+                className="input"
+                inputMode="numeric"
+                value={editing.order}
+                onChange={(e)=>setEditing(s=>({ ...s, order: Number(e.target.value || 0) }))}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <label className="label">Detail</label>
+            <textarea
+              className="input"
+              rows={3}
+              value={editing.detail}
+              onChange={(e)=>setEditing(s=>({ ...s, detail:e.target.value }))}
+              placeholder="e.g., 60 reps unbroken"
+            />
+          </div>
+          <div className="row" style={{ gap: 8, marginTop: 12, justifyContent:'flex-end' }}>
+            <button className="btn ghost" onClick={cancelEdit}>Cancel</button>
+            <button className="btn" disabled={saving} onClick={saveEdit}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      )}
 
-          <div className="vstack" style={{ gap:8 }}>
-            {tier.items.map((it, i) => (
-              <div key={i} className="vstack" style={{ gap:6, border:'1px solid #e5e7eb', borderRadius:12, padding:10 }}>
-                <div className="grid3">
+      {/* List */}
+      <div className="card pad">
+        <div className="row between center">
+          <h2 className="title">{headerBadge} Standards</h2>
+          {loading && <div className="muted">Loading…</div>}
+        </div>
+
+        {(!loading && list.length === 0) ? (
+          <div className="muted" style={{ marginTop: 8 }}>No standards in this tier yet.</div>
+        ) : (
+          <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+            {list.map((s, i) => (
+              <div key={s.id} className="row center" style={{
+                justifyContent:'space-between', padding:'10px 12px',
+                border:'1px solid #e5e7eb', borderRadius:12, gap:12
+              }}>
+                <div className="hstack" style={{ gap: 10 }}>
+                  <span className="badge" style={{ background:'#f1f5f9', color:'#0f172a' }}>#{s.order}</span>
                   <div>
-                    <div className="label">Key</div>
-                    <input value={it.key} onChange={e=>editItem(tierKey, i, 'key', e.target.value)} />
-                  </div>
-                  <div>
-                    <div className="label">Name</div>
-                    <input value={it.name} onChange={e=>editItem(tierKey, i, 'name', e.target.value)} />
-                  </div>
-                  <div>
-                    <div className="label">Target</div>
-                    <input value={it.target} onChange={e=>editItem(tierKey, i, 'target', e.target.value)} />
+                    <div style={{ fontWeight:800 }}>{s.title}</div>
+                    {s.detail && <div className="sub">{s.detail}</div>}
                   </div>
                 </div>
-                <div className="hstack" style={{ justifyContent:'flex-end', gap:8 }}>
-                  <button className="btn" onClick={()=>removeItem(tierKey, i)}>Remove</button>
+                <div className="hstack" style={{ gap: 6 }}>
+                  <button className="btn ghost" onClick={()=>move(s.id,'up')}   disabled={i===0}>↑</button>
+                  <button className="btn ghost" onClick={()=>move(s.id,'down')} disabled={i===list.length-1}>↓</button>
+                  <button className="btn" onClick={()=>startEdit(s)}>Edit</button>
+                  <button className="btn danger" onClick={()=>remove(s.id)}>Delete</button>
                 </div>
               </div>
             ))}
           </div>
+        )}
+      </div>
 
-          <button className="btn" onClick={()=>addItem(tierKey)}>+ Add standard</button>
-        </div>
-      ))}
-    </div>
+      <div className="muted" style={{ fontSize:12 }}>
+        Writes go to <code>standards</code>. Public page reads the same collection live.
+      </div>
+    </section>
   )
 }
