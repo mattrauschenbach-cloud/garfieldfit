@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { auth, db } from '../lib/firebase'
 import {
-  addDoc, collection, deleteDoc, doc, getDoc,
-  onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs,
+  onSnapshot, orderBy, query, runTransaction, serverTimestamp,
+  setDoc, updateDoc, writeBatch
 } from 'firebase/firestore'
 
 const TIERS = [
@@ -13,22 +14,47 @@ const TIERS = [
   { value: 'elite',     label: 'Elite'     },
 ]
 
+// Same fallback used on Standards + TierCheckoff
+const FALLBACK = {
+  committed: [
+    { title: '1.5 Mile Run', detail: '13:15 or less', order: 1 },
+    { title: 'Push-ups',     detail: '40 reps unbroken', order: 2 },
+    { title: 'Air Squats',   detail: '75 reps unbroken', order: 3 },
+  ],
+  developed: [
+    { title: '1.5 Mile Run', detail: '12:00 or less', order: 1 },
+    { title: 'Push-ups',     detail: '60 reps unbroken', order: 2 },
+    { title: 'Sit-ups',      detail: '75 reps unbroken', order: 3 },
+  ],
+  advanced: [
+    { title: '1.5 Mile Run', detail: '10:30 or less', order: 1 },
+    { title: 'Push-ups',     detail: '80 reps unbroken', order: 2 },
+    { title: 'Pull-ups',     detail: '15 reps strict', order: 3 },
+  ],
+  elite: [
+    { title: '1.5 Mile Run', detail: '9:30 or less', order: 1 },
+    { title: 'Push-ups',     detail: '100 reps unbroken', order: 2 },
+    { title: 'Burpees',      detail: '50 reps unbroken', order: 3 },
+  ],
+}
+
 export default function AdminStandards() {
-  const [user, setUser] = useState(() => auth.currentUser)
+  const [me, setMe] = useState(() => auth.currentUser)
   const [role, setRole] = useState('member')
   const isMentor = role === 'mentor' || role === 'admin'
 
   const [tier, setTier] = useState('committed')
-  const [list, setList] = useState([])     // current tier list [{id,title,detail,order}]
+  const [list, setList] = useState([])     // current tier list [{id,title,detail,order,tier}]
   const [loading, setLoading] = useState(true)
 
   const [editing, setEditing] = useState(null) // {id?, title, detail, order, tier}
   const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   // auth + role
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
-      setUser(u)
+      setMe(u)
       if (!u?.uid) { setRole('member'); return }
       try {
         const snap = await getDoc(doc(db, 'profiles', u.uid))
@@ -38,46 +64,39 @@ export default function AdminStandards() {
     return () => unsub()
   }, [])
 
-  // live load standards for selected tier
+  // live load all standards, then filter by tier
   useEffect(() => {
     setLoading(true)
-    const q = query(collection(db, 'standards'), orderBy('tier', 'asc'), orderBy('order', 'asc'))
-    const unsub = onSnapshot(q, (snap) => {
+    const qy = query(collection(db, 'standards'), orderBy('tier', 'asc'), orderBy('order', 'asc'))
+    const unsub = onSnapshot(qy, (snap) => {
       const all = []
       snap.forEach((d) => {
-        const data = d.data() || {}
+        const s = d.data() || {}
         all.push({
           id: d.id,
-          title: data.title || 'Untitled',
-          detail: data.detail || '',
-          order: data.order ?? 0,
-          tier: data.tier || 'committed',
+          title: s.title || 'Untitled',
+          detail: s.detail || '',
+          tier: s.tier || 'committed',
+          order: Number(s.order ?? 0),
         })
       })
-      const current = all.filter(s => s.tier === tier).sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
+      const current = all
+        .filter(s => s.tier === tier)
+        .sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
       setList(current)
       setLoading(false)
     }, () => setLoading(false))
     return () => unsub()
   }, [tier])
 
-  // start creating new
+  // CRUD
   function startNew() {
     const maxOrder = list.length ? Math.max(...list.map(i => i.order ?? 0)) : -1
     setEditing({ id: null, title: '', detail: '', order: maxOrder + 1, tier })
   }
+  function startEdit(item) { setEditing({ ...item }) }
+  function cancelEdit() { setEditing(null) }
 
-  // start editing existing
-  function startEdit(item) {
-    setEditing({ ...item })
-  }
-
-  // cancel edit
-  function cancelEdit() {
-    setEditing(null)
-  }
-
-  // save (create or update)
   async function saveEdit() {
     if (!isMentor) return alert('Mentor/admin only.')
     if (!editing?.title?.trim()) return alert('Title is required.')
@@ -101,7 +120,7 @@ export default function AdminStandards() {
           updatedAt: serverTimestamp(),
         })
       }
-      setEditing(null)
+      setEditing(null) // live listener refreshes
     } catch (e) {
       console.error(e)
       alert('Save failed. Check your Firestore rules and network.')
@@ -110,7 +129,6 @@ export default function AdminStandards() {
     }
   }
 
-  // delete
   async function remove(id) {
     if (!isMentor) return
     if (!confirm('Delete this standard?')) return
@@ -118,32 +136,141 @@ export default function AdminStandards() {
     catch (e) { console.error(e); alert('Delete failed (permissions?).') }
   }
 
-  // move up/down within tier by swapping order values
+  // Reorder within tier (swap 'order' values)
   async function move(id, dir) {
     if (!isMentor) return
     const idx = list.findIndex(i => i.id === id)
     if (idx < 0) return
     const j = dir === 'up' ? idx - 1 : idx + 1
     if (j < 0 || j >= list.length) return
-
-    const a = list[idx]
-    const b = list[j]
+    const a = list[idx], b = list[j]
     try {
       await runTransaction(db, async (tx) => {
         const aRef = doc(db, 'standards', a.id)
         const bRef = doc(db, 'standards', b.id)
-        tx.update(aRef, { order: b.order })
-        tx.update(bRef, { order: a.order })
+        tx.update(aRef, { order: b.order, updatedAt: serverTimestamp() })
+        tx.update(bRef, { order: a.order, updatedAt: serverTimestamp() })
       })
     } catch (e) {
-      console.error(e)
-      alert('Reorder failed.')
+      console.error(e); alert('Reorder failed.')
     }
+  }
+
+  // Move item to another tier (keeps relative order at the end)
+  async function moveTier(item, toTier) {
+    if (!isMentor) return
+    if (item.tier === toTier) return
+    try {
+      // find max order in target tier
+      const qy = query(collection(db, 'standards'), orderBy('tier','asc'), orderBy('order','asc'))
+      const snap = await getDocs(qy)
+      let max = -1
+      snap.forEach(d=>{
+        const s = d.data() || {}
+        if ((s.tier || 'committed') === toTier) {
+          const o = Number(s.order ?? 0)
+          if (o > max) max = o
+        }
+      })
+      await updateDoc(doc(db,'standards', item.id), {
+        tier: toTier,
+        order: max + 1,
+        updatedAt: serverTimestamp(),
+      })
+    } catch (e) {
+      console.error(e); alert('Move failed.')
+    }
+  }
+
+  // —— Bulk admin helpers ——
+
+  // Seed: add fallback (without deleting existing)
+  async function seedFallback() {
+    if (!isMentor) return
+    const ok = confirm('Add fallback items to the collection? (Existing docs remain)')
+    if (!ok) return
+    setBusy(true)
+    try {
+      for (const t of Object.keys(FALLBACK)) {
+        for (const item of FALLBACK[t]) {
+          await addDoc(collection(db, 'standards'), {
+            tier: t,
+            title: item.title,
+            detail: item.detail || '',
+            order: Number(item.order ?? 0),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        }
+      }
+      alert('Fallback items added ✅')
+    } catch (e) {
+      console.error(e); alert('Seeding failed (rules/network?).')
+    } finally { setBusy(false) }
+  }
+
+  // Replace all: delete everything, then import fallback
+  async function replaceWithFallback() {
+    if (!isMentor) return
+    const ok = confirm('⚠️ REPLACE EVERYTHING with fallback?\nThis will delete all existing standards and re-seed. This cannot be undone.')
+    if (!ok) return
+    setBusy(true)
+    try {
+      // delete all
+      const snap = await getDocs(collection(db,'standards'))
+      const batch = writeBatch(db)
+      snap.forEach(d => batch.delete(d.ref))
+      await batch.commit()
+      // import fallback
+      for (const t of Object.keys(FALLBACK)) {
+        for (const item of FALLBACK[t]) {
+          await addDoc(collection(db, 'standards'), {
+            tier: t,
+            title: item.title,
+            detail: item.detail || '',
+            order: Number(item.order ?? 0),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        }
+      }
+      alert('Collection replaced with fallback ✅')
+    } catch (e) {
+      console.error(e); alert('Replace failed.')
+    } finally { setBusy(false) }
+  }
+
+  // Normalize order numbers (0..n) inside each tier, stable by current order then title
+  async function normalizeOrders() {
+    if (!isMentor) return
+    setBusy(true)
+    try {
+      const qy = query(collection(db,'standards'), orderBy('tier','asc'), orderBy('order','asc'))
+      const snap = await getDocs(qy)
+      const byTier = { committed:[], developed:[], advanced:[], elite:[] }
+      snap.forEach(d => {
+        const s = d.data() || {}
+        const t = s.tier || 'committed'
+        byTier[t].push({ id: d.id, title: s.title || '', order: Number(s.order ?? 0) })
+      })
+      const batch = writeBatch(db)
+      for (const t of Object.keys(byTier)) {
+        const arr = byTier[t].sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
+        arr.forEach((item, idx) => {
+          batch.update(doc(db,'standards', item.id), { order: idx, updatedAt: serverTimestamp() })
+        })
+      }
+      await batch.commit()
+      alert('Orders normalized ✅')
+    } catch (e) {
+      console.error(e); alert('Normalize failed.')
+    } finally { setBusy(false) }
   }
 
   const headerBadge = useMemo(() => TIERS.find(t=>t.value===tier)?.label || tier, [tier])
 
-  if (!user) {
+  // —— UI ——
+  if (!me) {
     return (
       <section className="stack" style={{ gap: 16 }}>
         <div className="card pad">
@@ -153,13 +280,12 @@ export default function AdminStandards() {
       </section>
     )
   }
-
   if (!isMentor) {
     return (
       <section className="stack" style={{ gap: 16 }}>
         <div className="card pad">
           <div className="title">Access denied</div>
-          <div className="sub">You need mentor/admin privileges to edit standards.</div>
+          <div className="sub">Mentor/admin privileges are required.</div>
         </div>
       </section>
     )
@@ -171,7 +297,9 @@ export default function AdminStandards() {
         <div className="row between center">
           <div>
             <h1 className="title">Admin: Edit Standards</h1>
-            <div className="sub">Manage standards by tier. Changes appear instantly on the Standards page.</div>
+            <div className="sub">
+              Changes here update the <strong>Standards</strong> and <strong>Tier Checkoff</strong> pages instantly (same collection).
+            </div>
           </div>
           <span className="badge shift">{headerBadge}</span>
         </div>
@@ -179,7 +307,7 @@ export default function AdminStandards() {
 
       {/* Controls */}
       <div className="card pad">
-        <div className="grid2" style={{ gap: 12 }}>
+        <div className="grid3" style={{ gap: 12 }}>
           <div>
             <label className="label">Tier</label>
             <select className="input" value={tier} onChange={(e)=>setTier(e.target.value)}>
@@ -188,6 +316,11 @@ export default function AdminStandards() {
           </div>
           <div className="row center" style={{ gap: 8, alignItems:'flex-end', justifyContent:'flex-end' }}>
             <button className="btn primary" onClick={startNew}>+ New Standard</button>
+          </div>
+          <div className="row right" style={{ gap: 8 }}>
+            <button className="btn ghost" disabled={busy} onClick={seedFallback}>Seed fallback</button>
+            <button className="btn ghost" disabled={busy} onClick={normalizeOrders}>Normalize order</button>
+            <button className="btn danger" disabled={busy} onClick={replaceWithFallback}>Replace with fallback</button>
           </div>
         </div>
       </div>
@@ -266,6 +399,15 @@ export default function AdminStandards() {
                   </div>
                 </div>
                 <div className="hstack" style={{ gap: 6 }}>
+                  <select
+                    className="input"
+                    value={s.tier}
+                    onChange={(e)=>moveTier(s, e.target.value)}
+                    title="Move to another tier"
+                    style={{ padding: '4px 8px' }}
+                  >
+                    {TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
                   <button className="btn ghost" onClick={()=>move(s.id,'up')}   disabled={i===0}>↑</button>
                   <button className="btn ghost" onClick={()=>move(s.id,'down')} disabled={i===list.length-1}>↓</button>
                   <button className="btn" onClick={()=>startEdit(s)}>Edit</button>
@@ -278,7 +420,7 @@ export default function AdminStandards() {
       </div>
 
       <div className="muted" style={{ fontSize:12 }}>
-        Writes go to <code>standards</code>. Public page reads the same collection live.
+        Writes to <code>standards</code>. The **Standards** and **Tier Checkoff** pages both read this collection live.
       </div>
     </section>
   )
