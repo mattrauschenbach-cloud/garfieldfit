@@ -1,5 +1,6 @@
 // src/pages/Standards.jsx
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { db } from '../lib/firebase'
 import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
 
@@ -89,6 +90,8 @@ export default function Standards() {
     )
   }, [list, search])
 
+  const tierLabel = labelFor(tier)
+
   return (
     <section className="stack" style={{ gap: 16 }}>
       <header className="card pad">
@@ -97,7 +100,7 @@ export default function Standards() {
             <h1 className="title">Fitness Standards</h1>
             <div className="sub">Choose a tier to view standards separately</div>
           </div>
-          <span className="badge shift">{labelFor(tier)}</span>
+          <span className="badge shift">{tierLabel}</span>
         </div>
       </header>
 
@@ -116,9 +119,21 @@ export default function Standards() {
               className="input"
               placeholder="Type to filter…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={e => setSearch(e.target.value)}
             />
           </div>
+        </div>
+
+        {/* Jump to Tier Checkoff with the current tier */}
+        <div className="row" style={{ justifyContent:'flex-end', marginTop: 12 }}>
+          <Link
+            to={`/tier-checkoff?tier=${encodeURIComponent(tier)}`}
+            className="btn"
+            style={{ textDecoration:'none' }}
+            title="Open Tier Checkoff with this tier selected"
+          >
+            Open Tier Checkoff →
+          </Link>
         </div>
       </div>
 
@@ -133,7 +148,7 @@ export default function Standards() {
             <div key={s.id} className="card pad">
               <div className="row between center">
                 <div className="title">{s.title}</div>
-                <span className="badge shift">{labelFor(tier)}</span>
+                <span className="badge shift">{tierLabel}</span>
               </div>
               {s.detail && <div className="sub" style={{ marginTop: 6 }}>{s.detail}</div>}
             </div>
@@ -161,17 +176,4 @@ function buildGroupsFromSnap(snap) {
       order: data.order ?? 0
     })
   })
-  for (const k of Object.keys(byTier)) {
-    byTier[k].sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title))
-  }
-  return byTier
-}
-
-function labelFor(v) {
-  return (
-    v === 'committed' ? 'Committed' :
-    v === 'developed' ? 'Developed' :
-    v === 'advanced'  ? 'Advanced'  :
-    v === 'elite'     ? 'Elite'     : v
-  )
-}
+  for (const k
