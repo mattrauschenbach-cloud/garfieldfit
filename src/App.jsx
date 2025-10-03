@@ -1,133 +1,70 @@
 // src/App.jsx
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import AppShell from './components/AppShell'
 
-// Shell & route guards
-import AppShell from './components/AppShell.jsx'
-import ProtectedRoute from './components/ProtectedRoute.jsx'
-import MentorRoute from './components/MentorRoute.jsx'
-
-// Lazy-load pages (React Router v6)
-const Home = lazy(() => import('./pages/Home.jsx'))
-const Login = lazy(() => import('./pages/Login.jsx'))
-const WeeklyChallenge = lazy(() => import('./pages/WeeklyChallenge.jsx'))
+// PAGES
+const WeeklyChallenge  = lazy(() => import('./pages/WeeklyChallenge.jsx'))
 const MonthlyChallenge = lazy(() => import('./pages/MonthlyChallenge.jsx'))
-const Members = lazy(() => import('./pages/Members.jsx'))
-const Standards = lazy(() => import('./pages/Standards.jsx'))
-const StandardsBoard = lazy(() => import('./pages/StandardsBoard.jsx'))
-const StandardsImport = lazy(() => import('./pages/StandardsImport.jsx'))
-const AdminStandards = lazy(() => import('./pages/AdminStandards.jsx'))
-const TierCheckoff = lazy(() => import('./pages/TierCheckoff.jsx'))
-const WeeklyAdmin = lazy(() => import('./pages/WeeklyAdmin.jsx'))
-const MonthlyAdmin = lazy(() => import('./pages/MonthlyAdmin.jsx'))
-const Diag = lazy(() => import('./pages/Diag.jsx'))
-const Ping = lazy(() => import('./pages/Ping.jsx'))
-const PermTest = lazy(() => import('./pages/PermTest.jsx'))
+const Members          = lazy(() => import('./pages/Members.jsx'))
+const Standards        = lazy(() => import('./pages/Standards.jsx'))
+const TierCheckoff     = lazy(() => import('./pages/TierCheckoff.jsx'))
+const AdminStandards   = lazy(() => import('./pages/AdminStandards.jsx'))
+const Login            = lazy(() => import('./pages/Login.jsx'))
 
-function LoadingCard() {
-  return <div className="card pad">Loading…</div>
+// Simple guards (replace with your own if you already have them)
+import { auth, db } from './lib/firebase'
+import { doc, getDoc } from 'firebase/firestore'
+import { useEffect, useState } from 'react'
+
+function ProtectedRoute({ children }) {
+  const [user, setUser] = useState(() => auth.currentUser)
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(setUser)
+    return () => unsub()
+  }, [])
+  if (user === undefined) return null
+  return user ? children : <Navigate to="/login" replace />
+}
+
+function MentorRoute({ children }) {
+  const [user, setUser] = useState(() => auth.currentUser)
+  const [ok, setOk] = useState(null)
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(async (u) => {
+      setUser(u)
+      if (!u) { setOk(false); return }
+      try {
+        const snap = await getDoc(doc(db, 'profiles', u.uid))
+        const role = snap.exists() ? (snap.data().role || 'member') : 'member'
+        setOk(role === 'mentor' || role === 'admin')
+      } catch {
+        setOk(false)
+      }
+    })
+    return () => unsub()
+  }, [])
+
+  if (!user) return <Navigate to="/login" replace />
+  if (ok === null) return null
+  return ok ? children : <div className="card pad"><div className="title">Access denied</div><div className="sub">Mentor/admin only.</div></div>
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <AppShell>
-        <Suspense fallback={<LoadingCard />}>
+        <Suspense fallback={<div className="card pad">Loading…</div>}>
           <Routes>
-            {/* Public */}
-            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Navigate to="/weekly" replace />} />
 
-            {/* Auth-required pages */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Home />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/weekly"
-              element={
-                <ProtectedRoute>
-                  <WeeklyChallenge />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/monthly"
-              element={
-                <ProtectedRoute>
-                  <MonthlyChallenge />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/members"
-              element={
-                <ProtectedRoute>
-                  <Members />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/standards"
-              element={
-                <ProtectedRoute>
-                  <Standards />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/standards-board"
-              element={
-                <ProtectedRoute>
-                  <StandardsBoard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/standards-import"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <StandardsImport />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/weekly" element={<WeeklyChallenge />} />
+            <Route path="/monthly" element={<MonthlyChallenge />} />
+            <Route path="/members" element={<Members />} />
+            <Route path="/standards" element={<Standards />} />
 
-            {/* Admin / Mentor-only */}
-            <Route
-              path="/admin-standards"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <AdminStandards />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/weekly-admin"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <WeeklyAdmin />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/monthly-admin"
-              element={
-                <ProtectedRoute>
-                  <MentorRoute>
-                    <MonthlyAdmin />
-                  </MentorRoute>
-                </ProtectedRoute>
-              }
-            />
+            {/* Tier checkoff: mentor/admin only */}
             <Route
               path="/tier-checkoff"
               element={
@@ -139,35 +76,22 @@ export default function App() {
               }
             />
 
-            {/* Utilities / diagnostics (keep protected unless you want them public) */}
+            {/* Admin standards: mentor/admin only */}
             <Route
-              path="/diag"
+              path="/admin-standards"
               element={
                 <ProtectedRoute>
-                  <Diag />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/ping"
-              element={
-                <ProtectedRoute>
-                  <Ping />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/perm-test"
-              element={
-                <ProtectedRoute>
-                  <PermTest />
+                  <MentorRoute>
+                    <AdminStandards />
+                  </MentorRoute>
                 </ProtectedRoute>
               }
             />
 
-            {/* Legacy + 404 */}
-            <Route path="/home" element={<Navigate to="/" replace />} />
-            <Route path="*" element={<div className="card pad">Page not found.</div>} />
+            <Route path="/login" element={<Login />} />
+
+            {/* fallback */}
+            <Route path="*" element={<Navigate to="/weekly" replace />} />
           </Routes>
         </Suspense>
       </AppShell>
