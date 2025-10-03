@@ -14,12 +14,30 @@ const TIERS = [
   { value: 'elite',     label: 'Elite'     },
 ]
 
-/**
- * Firestore used:
- *  - profiles/<uid> { displayName, shift, role }
- *  - standards/<autoId> { tier, title, detail?, order? }
- *  - tier_checkoffs/<uid>_<tier> { uid, tier, completed: { [standardId]: bool }, updatedAt }
- */
+// ✅ Local fallback if Firestore has no standards (or rules block reads)
+const FALLBACK = {
+  committed: [
+    { id: 'c1', title: '1.5 Mile Run', detail: '13:15 or less', order: 1 },
+    { id: 'c2', title: 'Push-ups',     detail: '40 reps unbroken', order: 2 },
+    { id: 'c3', title: 'Air Squats',   detail: '75 reps unbroken', order: 3 },
+  ],
+  developed: [
+    { id: 'd1', title: '1.5 Mile Run', detail: '12:00 or less', order: 1 },
+    { id: 'd2', title: 'Push-ups',     detail: '60 reps unbroken', order: 2 },
+    { id: 'd3', title: 'Sit-ups',      detail: '75 reps unbroken', order: 3 },
+  ],
+  advanced: [
+    { id: 'a1', title: '1.5 Mile Run', detail: '10:30 or less', order: 1 },
+    { id: 'a2', title: 'Push-ups',     detail: '80 reps unbroken', order: 2 },
+    { id: 'a3', title: 'Pull-ups',     detail: '15 reps strict', order: 3 },
+  ],
+  elite: [
+    { id: 'e1', title: '1.5 Mile Run', detail: '9:30 or less', order: 1 },
+    { id: 'e2', title: 'Push-ups',     detail: '100 reps unbroken', order: 2 },
+    { id: 'e3', title: 'Burpees',      detail: '50 reps unbroken', order: 3 },
+  ],
+}
+
 export default function TierCheckoff() {
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -27,17 +45,18 @@ export default function TierCheckoff() {
   const [role, setRole] = useState('member')
   const isMentor = role === 'mentor' || role === 'admin'
 
-  const [members, setMembers] = useState([])   // [{uid,name,shift}]
+  const [members, setMembers] = useState([])         // [{uid,name,shift}]
   const [memberSearch, setMemberSearch] = useState('')
-  const [memberId, setMemberId] = useState('') // selected member uid
+  const [memberId, setMemberId] = useState('')       // selected member uid
   const [tier, setTier] = useState('committed')
 
-  const [standards, setStandards] = useState([]) // current-tier standards
-  const [checkoff, setCheckoff] = useState({})   // { [standardId]: bool }
+  const [standards, setStandards] = useState([])     // current-tier standards
+  const [usingFallback, setUsingFallback] = useState(false)
+  const [checkoff, setCheckoff] = useState({})       // { [standardId]: bool }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Initialize from URL: ?tier=...&member=...
+  // Init from URL (?tier=&member=)
   useEffect(() => {
     const t = searchParams.get('tier')
     if (t && TIERS.some(x => x.value === t)) setTier(t)
@@ -46,7 +65,7 @@ export default function TierCheckoff() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep URL in sync when user changes tier/member
+  // Keep URL in sync
   useEffect(() => {
     const next = new URLSearchParams(searchParams)
     if (tier) next.set('tier', tier); else next.delete('tier')
@@ -55,7 +74,7 @@ export default function TierCheckoff() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tier, memberId])
 
-  // track auth + my role
+  // Auth + role
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (u) => {
       setMe(u)
@@ -68,7 +87,7 @@ export default function TierCheckoff() {
     return () => unsub()
   }, [])
 
-  // load members (profiles)
+  // Load members (one-time)
   useEffect(() => {
     async function run() {
       try {
@@ -80,47 +99,92 @@ export default function TierCheckoff() {
           list.push({ uid: d.id, name: p.displayName || 'Member', shift: p.shift || 'A' })
         })
         setMembers(list)
-      } catch (e) {
-        console.error('load members failed', e)
+      } catch {
         setMembers([])
       }
     }
     run()
   }, [])
 
-  // load standards for tier (live)
+  // Load standards for current tier (live). Fallback if empty/blocked.
   useEffect(() => {
     setLoading(true)
-    const q = query(collection(db, 'standards'), orderBy('tier', 'asc'), orderBy('order', 'asc'))
-    const unsub = onSnapshot(q, (snap) => {
-      const all = []
-      snap.forEach(d => {
-        const s = d.data() || {}
-        all.push({ id: d.id, tier: s.tier || 'committed', title: s.title || 'Untitled', detail: s.detail || '', order: s.order ?? 0 })
-      })
-      const filtered = all.filter(s => s.tier === tier).sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
-      setStandards(filtered)
-      setLoading(false)
-    }, () => setLoading(false))
+    setUsingFallback(false)
+
+    const qy = query(collection(db, 'standards'), orderBy('tier', 'asc'), orderBy('order', 'asc'))
+    const unsub = onSnapshot(
+      qy,
+      (snap) => {
+        const all = []
+        snap.forEach(d => {
+          const s = d.data() || {}
+          all.push({
+            id: d.id,
+            tier: s.tier || 'committed',
+            title: s.title || 'Untitled',
+            detail: s.detail || '',
+            order: Number(s.order ?? 0),
+          })
+        })
+        const filtered = all.filter(s => s.tier === tier).sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
+        if (filtered.length === 0) {
+          // use fallback for this tier
+          setStandards([...(FALLBACK[tier] || [])])
+          setUsingFallback(true)
+        } else {
+          setStandards(filtered)
+          setUsingFallback(false)
+        }
+        setLoading(false)
+      },
+      async () => {
+        // fallback to one-time read
+        try {
+          const snap = await getDocs(qy)
+          const all = []
+          snap.forEach(d => {
+            const s = d.data() || {}
+            all.push({
+              id: d.id,
+              tier: s.tier || 'committed',
+              title: s.title || 'Untitled',
+              detail: s.detail || '',
+              order: Number(s.order ?? 0),
+            })
+          })
+          const filtered = all.filter(s => s.tier === tier).sort((a,b)=> (a.order - b.order) || a.title.localeCompare(b.title))
+          if (filtered.length === 0) {
+            setStandards([...(FALLBACK[tier] || [])])
+            setUsingFallback(true)
+          } else {
+            setStandards(filtered)
+            setUsingFallback(false)
+          }
+        } catch {
+          setStandards([...(FALLBACK[tier] || [])])
+          setUsingFallback(true)
+        } finally {
+          setLoading(false)
+        }
+      }
+    )
+
     return () => unsub()
   }, [tier])
 
-  // load checkoff doc for member + tier (live)
+  // Live load checkoff doc for member + tier
   useEffect(() => {
     if (!memberId) { setCheckoff({}); return }
     const id = `${memberId}_${tier}`
     const ref = doc(db, 'tier_checkoffs', id)
     const unsub = onSnapshot(ref, (snap) => {
-      if (snap.exists()) {
-        setCheckoff(snap.data()?.completed || {})
-      } else {
-        setCheckoff({})
-      }
+      if (snap.exists()) setCheckoff(snap.data()?.completed || {})
+      else setCheckoff({})
     })
     return () => unsub()
   }, [memberId, tier])
 
-  // derived: filtered member list & progress
+  // Derived lists + progress
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase()
     if (!q) return members
@@ -139,7 +203,7 @@ export default function TierCheckoff() {
     return { done, total, pct }
   }, [standards, checkoff])
 
-  // ✅ toggle check and save (this was the broken part in your file)
+  // Toggle & save
   const toggleStandard = useCallback(async (sid) => {
     if (!isMentor) { alert('Mentor/admin only.'); return }
     if (!memberId) { alert('Choose a member first.'); return }
@@ -191,7 +255,12 @@ export default function TierCheckoff() {
         <div className="row between center">
           <div>
             <h1 className="title">Tier Checkoff</h1>
-            <div className="sub">Select a member & tier, then check off standards as they’re achieved.</div>
+            <div className="sub">
+              Select a member & tier, then check off standards as they’re achieved.
+              {usingFallback && (
+                <span style={{ marginLeft: 8 }} className="badge role">Using fallback standards</span>
+              )}
+            </div>
           </div>
           <div className="hstack" style={{ gap: 8 }}>
             <span className="badge shift">{TIERS.find(t=>t.value===tier)?.label}</span>
@@ -289,7 +358,8 @@ export default function TierCheckoff() {
       </div>
 
       <div className="muted" style={{ fontSize:12 }}>
-        Stored in <code>tier_checkoffs/&lt;uid&gt;_&lt;tier&gt;</code>. URL stays in sync (tier & member) for easy sharing.
+        Stored in <code>tier_checkoffs/&lt;uid&gt;_&lt;tier&gt;</code>.
+        {usingFallback ? ' Using local fallback standards.' : ' Loaded from Firestore.'}
       </div>
     </section>
   )
