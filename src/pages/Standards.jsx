@@ -176,4 +176,18 @@ function buildGroupsFromSnap(snap) {
       order: data.order ?? 0
     })
   })
-  for (const k
+  // Final sort by order then title
+  for (const k of Object.keys(byTier)) {
+    byTier[k].sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title))
+  }
+  return byTier
+}
+
+function labelFor(v) {
+  return (
+    v === 'committed' ? 'Committed' :
+    v === 'developed' ? 'Developed' :
+    v === 'advanced'  ? 'Advanced'  :
+    v === 'elite'     ? 'Elite'     : v
+  )
+}
